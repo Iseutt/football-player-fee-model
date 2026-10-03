@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Player Fee Model</title>
+<style>
+:root {
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --model: #2a78d6; --tm: #eb6834; --hover: #f0efec;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --model: #3987e5; --tm: #d95926; --hover: #2c2c2a;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 1100px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-size: 28px; line-height: 1.2; margin: 0 0 8px; }
+.lede { color: var(--ink-2); max-width: 70ch; margin: 0 0 24px; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.controls input, .controls select { font: inherit; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--axis); border-radius: 6px; padding: 8px 10px; min-width: 0; }
+.controls input { flex: 1 1 220px; }
+.count { color: var(--ink-2); font-size: 13px; margin: 0 0 8px; }
+.table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--grid); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { padding: 10px 12px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--grid); }
+th:first-child, td:first-child { text-align: left; }
+thead th { font-size: 12px; font-weight: 600; color: var(--ink-2); cursor: pointer; user-select: none;
+  position: sticky; top: 0; background: var(--surface); }
+thead th[aria-sort]::after { content: " ▾"; }
+thead th[aria-sort="ascending"]::after { content: " ▴"; }
+tbody tr.row { cursor: pointer; }
+tbody tr.row:hover { background: var(--hover); }
+.name { font-weight: 600; }
+.sub { color: var(--ink-2); font-size: 13px; }
+.model { font-weight: 600; }
+.detail td { text-align: left; white-space: normal; background: var(--page); padding: 16px 12px 20px; }
+.detail-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 24px; align-items: start; }
+@media (max-width: 720px) { .detail-grid { grid-template-columns: 1fr; } }
+.legend { display: flex; gap: 16px; font-size: 13px; color: var(--ink-2); margin-bottom: 4px; }
+.legend i { display: inline-block; width: 14px; height: 2px; vertical-align: middle; margin-right: 6px; }
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; height: auto; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--axis);
+  border-radius: 6px; padding: 6px 8px; font-size: 12px; white-space: nowrap; display: none; }
+.detail table { font-size: 13px; }
+.detail th, .detail td.n { padding: 6px 8px; }
+.pager { display: flex; gap: 8px; align-items: center; margin-top: 12px; color: var(--ink-2); font-size: 13px; }
+.pager button { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--axis);
+  border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.pager button:disabled { opacity: .4; cursor: default; }
+.notes { color: var(--ink-2); font-size: 13px; max-width: 80ch; margin-top: 32px; }
+.notes h2 { font-size: 15px; color: var(--ink); margin: 0 0 6px; }
+.notes li { margin-bottom: 4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Player fee model</h1>
+  <p class="lede">The fee each player would be expected to fetch if sold from his current club on 1 July 2026,
+    according to a model trained on past paid transfers, next to his Transfermarkt market value.
+    Click a player to see both prices over the last five years.</p>
+
+  <div class="controls">
+    <input id="q" type="search" placeholder="Search player or club" aria-label="Search player or club">
+    <select id="pos" aria-label="Position"><option value="">All positions</option></select>
+    <select id="league" aria-label="League"><option value="">All leagues</option></select>
+  </div>
+  <p class="count" id="count"></p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th data-k="name">Player</th><th data-k="age">Age</th><th data-k="model">Model price</th>
+        <th data-k="tm">Transfermarkt price</th><th data-k="diff">Model vs Transfermarkt</th>
+        <th data-k="lo">Model range</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <div class="pager">
+    <button id="prev">Previous</button><span id="page"></span><button id="next">Next</button>
+  </div>
+
+  <section class="notes">
+    <h2>How to read these numbers</h2>
+    <ul>
+      <li>The model price is an estimate of a transfer fee, not a quality rating. On real transfers it had never
+        seen (2024–2026), this version was off by a median of about 42%.</li>
+      <li>The model range is an 80% interval: for four in five real transfers, the actual fee fell inside it.</li>
+      <li>Each yearly price uses only transfers that happened before that date.</li>
+      <li>The model learns from players who were actually sold, and it knows nothing about contract length,
+        so prices for players who are not for sale are less reliable.</li>
+      <li>Data: Transfermarkt, via the open transfermarkt-datasets project. Last update 6 July 2026.</li>
+    </ul>
+  </section>
+</main>
+
+<script src="data.js"></script>
+<script>
+const D = window.DATA, YEARS = D.dates.map(d => d.slice(0, 4)), LAST = YEARS.length - 1, PER = 50;
+const P = D.players.map(r => ({ id: r[0], name: r[1], club: r[2], league: r[3], country: r[4], pos: r[5], age: r[6],
+  tms: r[7], models: r[8], lo: r[9], hi: r[10], tm: r[7][LAST], model: r[8][LAST],
+  diff: r[8][LAST] / r[7][LAST] - 1, key: (r[1] + " " + r[2]).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "") }));
+const state = { sort: "model", asc: false, page: 0, open: null };
+const $ = id => document.getElementById(id);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const eur = k => k == null ? "–" : k === 0 ? "€0" : k >= 1000 ? "€" + (k / 1000).toFixed(k >= 10000 ? 0 : 1) + "m" : "€" + k + "k";
+const pct = x => (x >= 0 ? "▲ +" : "▼ −") + Math.abs(x * 100).toFixed(0) + "%";
+
+function fill(sel, values) { [...new Set(values)].filter(Boolean).sort().forEach(v => sel.append(new Option(v, v))); }
+fill($("pos"), P.map(p => p.pos)); fill($("league"), P.map(p => p.league));
+
+function filtered() {
+  const q = $("q").value.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+  const pos = $("pos").value, lg = $("league").value, k = state.sort, s = state.asc ? 1 : -1;
+  return P.filter(p => (!q || p.key.includes(q)) && (!pos || p.pos === pos) && (!lg || p.league === lg))
+    .sort((a, b) => k === "name" ? s * a.name.localeCompare(b.name) : s * (a[k] - b[k]));
+}
+
+function chart(p) {
+  const W = 520, H = 240, m = { l: 48, r: 16, t: 12, b: 28 }, ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg"); svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("role", "img"); svg.setAttribute("aria-label", "Model price and Transfermarkt price by year");
+  const add = (tag, attrs, text) => { const e = document.createElementNS(ns, tag);
+    for (const a in attrs) e.setAttribute(a, attrs[a]); if (text != null) e.textContent = text; svg.append(e); return e; };
+  const max = Math.max(...p.models.filter(v => v != null), ...p.tms.filter(v => v != null)) * 1.1 || 1;
+  const x = i => m.l + i * (W - m.l - m.r) / LAST, y = v => H - m.b - v / max * (H - m.t - m.b);
+  for (let i = 0; i <= 4; i++) { const v = max * i / 4;
+    add("line", { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), stroke: i ? "var(--grid)" : "var(--axis)" });
+    add("text", { x: m.l - 8, y: y(v) + 4, "text-anchor": "end", "font-size": 11, fill: "var(--muted)" }, eur(Math.round(v))); }
+  YEARS.forEach((yr, i) => add("text", { x: x(i), y: H - 8, "text-anchor": "middle", "font-size": 11, fill: "var(--muted)" }, yr));
+  const cross = add("line", { y1: m.t, y2: H - m.b, stroke: "var(--axis)", visibility: "hidden" });
+  for (const [vals, color] of [[p.tms, "var(--tm)"], [p.models, "var(--model)"]]) {
+    const pts = vals.map((v, i) => v == null ? null : [x(i), y(v)]).filter(Boolean);
+    add("polyline", { points: pts.map(a => a.join(",")).join(" "), fill: "none", stroke: color, "stroke-width": 2,
+      "stroke-linejoin": "round", "stroke-linecap": "round" });
+    pts.forEach(a => add("circle", { cx: a[0], cy: a[1], r: 4, fill: color, stroke: "var(--page)", "stroke-width": 2 }));
+  }
+  const wrap = el("div", "chart"), tip = el("div", "tip"); wrap.append(svg, tip);
+  svg.addEventListener("pointermove", e => {
+    const b = svg.getBoundingClientRect(), px = (e.clientX - b.left) / b.width * W;
+    const i = Math.max(0, Math.min(LAST, Math.round((px - m.l) / ((W - m.l - m.r) / LAST))));
+    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
+    tip.textContent = `${YEARS[i]} · Model ${eur(p.models[i])} · Transfermarkt ${eur(p.tms[i])}`;
+    tip.style.display = "block";
+    tip.style.left = Math.min(b.width - tip.offsetWidth, Math.max(0, x(i) / W * b.width - tip.offsetWidth / 2)) + "px";
+    tip.style.top = "0px";
+  });
+  svg.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); tip.style.display = "none"; });
+  return wrap;
+}
+
+function detail(p) {
+  const tr = el("tr", "detail"), td = el("td"); td.colSpan = 6; tr.append(td);
+  const grid = el("div", "detail-grid"), left = el("div"), right = el("div");
+  const legend = el("div", "legend");
+  for (const [label, c] of [["Model price", "var(--model)"], ["Transfermarkt price", "var(--tm)"]]) {
+    const s = el("span"), i = el("i"); i.style.background = c; s.append(i, label); legend.append(s); }
+  left.append(legend, chart(p));
+  const t = el("table"), h = el("tr"); ["1 July", "Model", "Transfermarkt", "Difference"].forEach(x => h.append(el("th", null, x)));
+  t.append(h);
+  YEARS.forEach((yr, i) => { const r = el("tr");
+    const d = p.models[i] != null && p.tms[i] ? pct(p.models[i] / p.tms[i] - 1) : "–";
+    [yr, eur(p.models[i]), eur(p.tms[i]), d].forEach(x => r.append(el("td", "n", x))); t.append(r); });
+  right.append(t, el("p", "sub", [p.pos, p.country].filter(x => x && x !== "Unknown").join(" · ")));
+  grid.append(left, right); td.append(grid);
+  return tr;
+}
+
+function render() {
+  const list = filtered(), pages = Math.max(1, Math.ceil(list.length / PER));
+  state.page = Math.min(state.page, pages - 1);
+  const body = $("rows"); body.replaceChildren();
+  list.slice(state.page * PER, (state.page + 1) * PER).forEach(p => {
+    const tr = el("tr", "row"), first = el("td");
+    first.append(el("div", "name", p.name), el("div", "sub", [p.club, p.league].filter(Boolean).join(" · ")));
+    tr.append(first, el("td", null, Math.floor(p.age)), el("td", "model", eur(p.model)), el("td", null, eur(p.tm)),
+      el("td", null, pct(p.diff)), el("td", "sub", eur(p.lo) + " – " + eur(p.hi)));
+    tr.addEventListener("click", () => { state.open = state.open === p.id ? null : p.id; render(); });
+    body.append(tr);
+    if (state.open === p.id) body.append(detail(p));
+  });
+  $("count").textContent = list.length.toLocaleString("en") + " players";
+  $("page").textContent = `Page ${state.page + 1} of ${pages}`;
+  $("prev").disabled = state.page === 0; $("next").disabled = state.page >= pages - 1;
+  document.querySelectorAll("thead th").forEach(th => { th.removeAttribute("aria-sort");
+    if (th.dataset.k === state.sort) th.setAttribute("aria-sort", state.asc ? "ascending" : "descending"); });
+}
+
+document.querySelectorAll("thead th").forEach(th => th.addEventListener("click", () => {
+  const k = th.dataset.k; state.asc = state.sort === k ? !state.asc : k === "name"; state.sort = k; state.page = 0; render(); }));
+["q", "pos", "league"].forEach(id => $(id).addEventListener("input", () => { state.page = 0; render(); }));
+$("prev").addEventListener("click", () => { state.page--; render(); });
+$("next").addEventListener("click", () => { state.page++; render(); });
+render();
+</script>
+</body>
+</html>

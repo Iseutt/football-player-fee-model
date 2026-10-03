@@ -1,0 +1,6 @@
+step,n
+paid transfers 2014-01-01 to 2026-07-06,16345
+drop suspected loan fees,16313
+drop missing date of birth / position,16312
+drop fee below 50k,15936
+  of which with pre-transfer valuation,15138

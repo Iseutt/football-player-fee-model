@@ -1,0 +1,5 @@
+method,target,coverage_test,median_width_factor
+split conformal,0.8,0.8054074638233054,5.1337536202751615
+conformal quantile regression,0.8,0.8162604722010662,5.531490086424653
+split conformal,0.9,0.8998476770753998,8.92673087347555
+conformal quantile regression,0.9,0.8998476770753998,9.078302726140464
