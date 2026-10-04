@@ -477,7 +477,9 @@ story = [
     *bullets([
         "<b>Unlikely pairs are extrapolations.</b> The model learned from transfers that happened, where rich "
         "clubs bought expensive players and small clubs cheap ones. The price of a low-value player for a top "
-        "club, or of a star for a small club, is far from anything the model has seen and should not be trusted.",
+        "club, or of a star for a small club, is far from anything the model has seen and should not be trusted. "
+        "The website marks a price with * when the player's Transfermarkt value is below the cheapest 5% or above "
+        "the most expensive of the players bought by clubs of that league over the last five years.",
         "<b>It is a price, not a probability.</b> The option says what the fee would be if the deal happened, not "
         "whether the club could afford it or the player would go.",
         "<b>The seller is not modelled as negotiating.</b> A club that does not want to sell asks for more than "

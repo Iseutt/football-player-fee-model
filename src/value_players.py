@@ -7,6 +7,7 @@ Run from the project root (after train_model.py):  python src/value_players.py
 """
 import base64
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -43,7 +44,23 @@ def buyer_clubs(T, date):
     return build_features(q, T).assign(buyer_row=True)
 
 
-def buyer_prices(p, buyers, tr, rounds, T, leagues):
+def usual_values(past, date):
+    """Per buying league: the range of Transfermarkt values (5th percentile to maximum, in thousands of euros)
+    of the players its clubs bought over the previous five years. Outside it, a buyer price is an extrapolation."""
+    r = past[past.transfer_date >= date - pd.Timedelta(days=5 * 365)]
+    span = lambda s: [int(s.quantile(0.05) / 1000), int(s.max() / 1000)]  # noqa: E731
+    by = {str(k): span(g) for k, g in r.groupby("buy_league", observed=True).mv_pre if len(g) >= 30}
+    return by, span(r.mv_pre)
+
+
+def stamp_site(version):
+    """Version the data files in index.html, so that a browser never mixes a new page with cached old data."""
+    f = SITE / "index.html"
+    f.write_text(re.sub(r"((?:data|buyers)\.js)(\?v=\w*)?", r"\1?v=" + version, f.read_text(encoding="utf-8")),
+                 encoding="utf-8", newline="\n")
+
+
+def buyer_prices(p, buyers, tr, rounds, T, leagues, version):
     """Full model (knows the buyer): price of every player for every possible buying club, for the website."""
     d = DATES[-1]
     past = tr[tr.transfer_date < d]
@@ -54,6 +71,7 @@ def buyer_prices(p, buyers, tr, rounds, T, leagues):
     out = SITE / "buyers"
     shutil.rmtree(out, ignore_errors=True)
     out.mkdir(parents=True)
+    usual, usual_all = usual_values(past, d)
     x, clubs, allc = p[FEATS_A].copy(), [], []
     for b in buyers.itertuples():
         for c in BUYER_COLS:
@@ -66,9 +84,11 @@ def buyer_prices(p, buyers, tr, rounds, T, leagues):
         cid = int(b.to_club_id)
         (out / f"{cid}.js").write_text("window.BUYER_DATA=window.BUYER_DATA||{};window.BUYER_DATA[%d]=\"%s\";"
                                        % (cid, base64.b64encode(c.tobytes()).decode()))
-        clubs.append([cid, T.names.get(cid, str(cid)), leagues.get(str(b.buy_league), str(b.buy_league))])
+        clubs.append([cid, T.names.get(cid, str(cid)), leagues.get(str(b.buy_league), str(b.buy_league)),
+                      *usual.get(str(b.buy_league), usual_all)])
         allc.append(c)
-    index = {"step": BUYER_STEP, "range": float(np.exp(q)), "clubs": sorted(clubs, key=lambda r: (r[2], r[1]))}
+    index = {"version": version, "players": len(p), "step": BUYER_STEP, "range": float(np.exp(q)),
+             "fields": ["id", "name", "league", "usual_lo", "usual_hi"], "clubs": sorted(clubs, key=lambda r: (r[2], r[1]))}
     (SITE / "buyers.js").write_text("window.BUYERS = " + json.dumps(index, ensure_ascii=False, separators=(",", ":")) + ";",
                                     encoding="utf-8")
     # summary for the method note
@@ -124,7 +144,10 @@ def main():
     k = lambda s: (s / 1000).round().astype("Int64")  # noqa: E731
     wide = out.pivot(index="player_id", columns="transfer_date", values=["tm_value", "model_value"])
     last = out[out.transfer_date == DATES[-1]].set_index("player_id")
-    leagues = T.comps.set_index("competition_id").name.str.replace("-", " ").str.title().to_dict()
+    lg = T.comps.set_index("competition_id")
+    lg["label"] = lg.name.str.replace("-", " ").str.title()
+    lg["label"] = lg.label.where(~lg.label.duplicated(keep=False), lg.label + " (" + lg.country_name.fillna("") + ")")
+    leagues = lg.label.to_dict()
     rows = []
     for pid, r in last.iterrows():
         series = lambda c: [None if pd.isna(x) else int(round(x / 1000)) for x in wide.loc[pid, c]]  # noqa: E731
@@ -141,7 +164,9 @@ def main():
                                   encoding="utf-8")
     print("site data:", len(rows), "players,", round((SITE / "data.js").stat().st_size / 1e6, 1), "MB")
     rounds_a = fit_lgb(tr[tr.split == "train"], tr[tr.split == "valid"], FEATS_A, "log_ratio").best_iteration
-    buyer_prices(out[out.transfer_date == DATES[-1]], buyers, tr, rounds_a, T, leagues)
+    version = pd.Timestamp.now().strftime("%Y%m%d%H%M")
+    buyer_prices(out[out.transfer_date == DATES[-1]], buyers, tr, rounds_a, T, leagues, version)
+    stamp_site(version)
     top = last.sort_values("model_value", ascending=False).head(15)
     print(top[["name", "club", "age", "tm_value", "model_value", "model_lo", "model_hi"]].round(0).to_string())
     r = np.log(last.model_value / last.tm_value)

@@ -39,6 +39,7 @@ tbody tr.row:hover { background: var(--hover); }
 .name { font-weight: 600; }
 .sub { color: var(--ink-2); font-size: 13px; }
 .model { font-weight: 600; }
+.unusual { color: var(--muted); font-weight: 400; }
 .detail td { text-align: left; white-space: normal; background: var(--page); padding: 16px 12px 20px; }
 .detail-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 24px; align-items: start; }
 @media (max-width: 720px) { .detail-grid { grid-template-columns: 1fr; } }
@@ -95,8 +96,9 @@ tbody tr.row:hover { background: var(--hover); }
         seen (2024–2026), the version without a buyer was off by a median of about 41%.</li>
       <li>With a buying club chosen, the price comes from the full model, which also knows the buyer: its country
         and league, its spending, its squad value and what it usually pays compared with Transfermarkt values. It is
-        more accurate on real transfers (median error about 38%). Few rich clubs buy cheap players, so prices for
-        unlikely pairs of club and player are less reliable.</li>
+        more accurate on real transfers (median error about 38%). A price marked * is an unusual deal: the player's
+        Transfermarkt value is below the cheapest 5% or above the most expensive of the players that clubs of that
+        league bought over the last five years, so the model has little to go on.</li>
       <li>The model range is an 80% interval: for four in five real transfers, the actual fee fell inside it.</li>
       <li>Each yearly price uses only transfers that happened before that date.</li>
       <li>The model learns from players who were actually sold, and it knows nothing about contract length,
@@ -106,8 +108,8 @@ tbody tr.row:hover { background: var(--hover); }
   </section>
 </main>
 
-<script src="data.js"></script>
-<script src="buyers.js"></script>
+<script src="data.js?v=202610041518"></script>
+<script src="buyers.js?v=202610041518"></script>
 <script>
 const D = window.DATA, YEARS = D.dates.map(d => d.slice(0, 4)), LAST = YEARS.length - 1, PER = 50;
 const P = D.players.map((r, i) => ({ idx: i, base: r[8][LAST], baseLo: r[9], baseHi: r[10], id: r[0], name: r[1], club: r[2], league: r[3], country: r[4], pos: r[5], age: r[6],
@@ -130,9 +132,12 @@ fill($("pos"), P.map(p => p.pos)); fill($("league"), P.map(p => p.league));
 // price of every player if the chosen club buys him (full model); without a buyer, the website model
 function applyBuyer(club) {
   const raw = club && window.BUYER_DATA && window.BUYER_DATA[club[0]];
-  const v = raw ? Int8Array.from(atob(raw), c => c.charCodeAt(0)) : null;
+  let v = raw ? Int8Array.from(atob(raw), c => c.charCodeAt(0)) : null;
+  if (v && v.length !== P.length) v = null;      // buyer file from another version of the data
   state.buyer = v ? club : null;
   for (const p of P) {
+    // far from the Transfermarkt values this club's league usually buys: the price is an extrapolation
+    p.unusual = !!v && (p.tm < club[3] || p.tm > club[4]);
     if (!v) { p.model = p.base; p.lo = p.baseLo; p.hi = p.baseHi; }
     else if (v[p.idx] === -128) { p.model = p.lo = p.hi = null; }
     else { const x = p.tm * Math.exp(v[p.idx] * B.step);
@@ -145,7 +150,7 @@ function applyBuyer(club) {
 function chooseBuyer() {
   const club = B.clubs.find(c => String(c[0]) === $("buyer").value);
   if (!club || (window.BUYER_DATA && window.BUYER_DATA[club[0]])) return applyBuyer(club);
-  const s = document.createElement("script"); s.src = "buyers/" + club[0] + ".js";
+  const s = document.createElement("script"); s.src = "buyers/" + club[0] + ".js?v=" + B.version;
   s.onload = () => { if (String(club[0]) === $("buyer").value) applyBuyer(club); };
   s.onerror = () => { $("buyer").value = ""; applyBuyer(null); };
   document.head.append(s);
@@ -206,7 +211,8 @@ function detail(p) {
     [yr, eur(p.models[i]), eur(p.tms[i]), d].forEach(x => r.append(el("td", "n", x))); t.append(r); });
   right.append(t, el("p", "sub", [p.pos, p.country].filter(x => x && x !== "Unknown").join(" · ")));
   if (state.buyer) right.append(el("p", "sub", p.model == null ? "Already at " + state.buyer[1] + "."
-    : "If " + state.buyer[1] + " buys: " + eur(p.model) + " (range " + eur(p.lo) + " – " + eur(p.hi) + "). With no buyer chosen: " + eur(p.base) + "."));
+    : "If " + state.buyer[1] + " buys: " + eur(p.model) + " (range " + eur(p.lo) + " – " + eur(p.hi) + "). With no buyer chosen: " + eur(p.base) + "."
+      + (p.unusual ? " Unusual deal: clubs in " + state.buyer[2] + " bought players valued between " + eur(state.buyer[3]) + " and " + eur(state.buyer[4]) + " by Transfermarkt over the last five years, so this price is a rough guess." : "")));
   else right.append(el("p", "sub", "Choose a buying club above to see the price for that club."));
   grid.append(left, right); td.append(grid);
   return tr;
@@ -219,14 +225,14 @@ function render() {
   list.slice(state.page * PER, (state.page + 1) * PER).forEach(p => {
     const tr = el("tr", "row"), first = el("td");
     first.append(el("div", "name", p.name), el("div", "sub", [p.club, p.league].filter(Boolean).join(" · ")));
-    tr.append(first, el("td", null, Math.floor(p.age)), el("td", "model", eur(p.model)), el("td", null, eur(p.tm)),
+    tr.append(first, el("td", null, Math.floor(p.age)), el("td", p.unusual ? "model unusual" : "model", eur(p.model) + (p.unusual ? " *" : "")), el("td", null, eur(p.tm)),
       el("td", null, p.diff == null ? "–" : pct(p.diff)), el("td", "sub", p.model == null ? "current club" : eur(p.lo) + " – " + eur(p.hi)));
     tr.addEventListener("click", () => { state.open = state.open === p.id ? null : p.id; render(); });
     body.append(tr);
     if (state.open === p.id) body.append(detail(p));
   });
   $("count").textContent = list.length.toLocaleString("en") + " players" +
-    (state.buyer ? " · prices if " + state.buyer[1] + " buys (full model)" : " · prices with no buyer chosen");
+    (state.buyer ? " · prices if " + state.buyer[1] + " buys (full model) · * unusual deal for this club, rough guess" : " · prices with no buyer chosen");
   $("page").textContent = `Page ${state.page + 1} of ${pages}`;
   $("prev").disabled = state.page === 0; $("next").disabled = state.page >= pages - 1;
   document.querySelectorAll("thead th").forEach(th => { th.removeAttribute("aria-sort");
