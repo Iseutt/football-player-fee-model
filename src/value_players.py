@@ -21,6 +21,7 @@ from modeling import (CAT, FEATS_A, FEATS_V, OUT, RANGE_EDGES, apply_shrink, ban
 DATES = pd.to_datetime([f"{y}-07-01" for y in range(2022, 2027)])
 ACTIVE_DAYS = 548      # a player is active if Transfermarkt valued him in the 18 months before the date
 COVERAGE = 0.8
+DECEASED = [340950]    # players who died but still have a recent valuation in the source (Diogo Jota)
 SITE = Path("docs")
 BUYER_STEP = 0.02      # buyer prices are stored as log(price / Transfermarkt value) in steps of 2%
 BUYER_COLS = ["buy_league", "buy_country", "buy_ppg", "log_buy_spend_3y", "buy_n_3y", "buy_youth_team",
@@ -74,6 +75,10 @@ def buyer_prices(p, buyers, tr, rounds, T, leagues, version):
     shutil.rmtree(out, ignore_errors=True)
     out.mkdir(parents=True)
     usual, usual_all = usual_values(past, d)
+    country = T.comps.set_index("competition_id").country_name.to_dict()
+    # countries of the eight richest leagues (average squad value), shown first in the club picker
+    top = buyers.groupby("buy_league", observed=True).buy_league_avg_squad_value.first().sort_values(ascending=False)
+    top = [country[str(k)] for k in top.index[:8]]
     x, clubs, allc = p[FEATS_A].copy(), [], []
     for b in buyers.itertuples():
         for c in BUYER_COLS:
@@ -88,11 +93,13 @@ def buyer_prices(p, buyers, tr, rounds, T, leagues, version):
         (out / f"{cid}.js").write_text("window.BUYER_DATA=window.BUYER_DATA||{};window.BUYER_DATA[%d]=\"%s\";"
                                        % (cid, base64.b64encode(c.tobytes()).decode()))
         clubs.append([cid, T.names.get(cid, str(cid)), leagues.get(str(b.buy_league), str(b.buy_league)),
-                      *usual.get(str(b.buy_league), usual_all)])
+                      *usual.get(str(b.buy_league), usual_all), country.get(str(b.buy_league), ""), str(b.buy_league)])
         allc.append(c)
     index = {"version": version, "players": len(p), "step": BUYER_STEP, "range": [float(v) for v in np.exp(q)],
              "range_edges": [int(e / 1000) for e in RANGE_EDGES],
-             "fields": ["id", "name", "league", "usual_lo", "usual_hi"], "clubs": sorted(clubs, key=lambda r: (r[2], r[1]))}
+             "top_countries": top,
+             "fields": ["id", "name", "league", "usual_lo", "usual_hi", "country", "league_code"],
+             "clubs": sorted(clubs, key=lambda r: (r[2], r[1]))}
     (SITE / "buyers.js").write_text("window.BUYERS = " + json.dumps(index, ensure_ascii=False, separators=(",", ":")) + ";",
                                     encoding="utf-8")
     # summary for the method note
@@ -122,8 +129,10 @@ def main():
     allrows = allrows[allrows.buyer_row != True]  # noqa: E712
     allrows["log_ratio"] = allrows.log_fee - allrows.log_mv_pre
     tr = allrows[(allrows.is_transfer == True) & allrows.log_mv_pre.notna()]  # noqa: E712
+    gone = pd.concat([T.players[T.players.current_club_id.isna()].player_id, pd.Series(DECEASED)])
     pl = allrows[(allrows.is_transfer != True) & allrows.log_mv_pre.notna() & allrows.age.notna()  # noqa: E712
-                 & (allrows.position != "NA")].copy()
+                 & (allrows.position != "NA") & ~allrows.status.isin(["Retired", "Career break"])
+                 & ~allrows.player_id.isin(gone)].copy()
 
     rounds = fit_lgb(tr[tr.split == "train"], tr[tr.split == "valid"], FEATS_V, "log_ratio").best_iteration
     out = []
@@ -148,7 +157,7 @@ def main():
 
     # compact file for the website: players valued at the latest date, values in thousands of euros
     k = lambda s: (s / 1000).round().astype("Int64")  # noqa: E731
-    wide = out.pivot(index="player_id", columns="transfer_date", values=["tm_value", "model_value"])
+    wide = out.pivot(index="player_id", columns="transfer_date", values=["tm_value", "model_value", "from_club_id"])
     last = out[out.transfer_date == DATES[-1]].set_index("player_id")
     lg = T.comps.set_index("competition_id")
     lg["label"] = lg.name.str.replace("-", " ").str.title()
@@ -164,14 +173,17 @@ def main():
                      r.sub_position != "NA" else str(r.position), round(float(r.age), 1),
                      series("tm_value"), series("model_value"), int(k(pd.Series([r.model_lo]))[0]),
                      int(k(pd.Series([r.model_hi]))[0]), None if pd.isna(r.from_club_id) else int(r.from_club_id),
-                     img.get(pid, "")])
+                     img.get(pid, ""), [None if pd.isna(x) else int(x) for x in wide.loc[pid, "from_club_id"]],
+                     int(r.status != "")])
     data = {"dates": [d.strftime("%Y-%m-%d") for d in DATES], "coverage": COVERAGE,
             "fields": ["id", "name", "club", "league", "country", "position", "age", "tm", "model", "lo", "hi", "club_id",
-                       "photo"],
+                       "photo", "club_by_year", "free_agent"],
+            "club_names": {int(c): T.names[c] for c in pd.unique(wide["from_club_id"].values.ravel()) if c in T.names},
             "players": rows}
     SITE.mkdir(exist_ok=True)
     (SITE / "data.js").write_text("window.DATA = " + json.dumps(data, ensure_ascii=False, separators=(",", ":")) + ";",
                                   encoding="utf-8")
+    print("free agents:", int((last.status != "").sum()), "| moved on the valuation date or the day itself counted")
     print("site data:", len(rows), "players,", round((SITE / "data.js").stat().st_size / 1e6, 1), "MB")
     rounds_a = fit_lgb(tr[tr.split == "train"], tr[tr.split == "valid"], FEATS_A, "log_ratio").best_iteration
     version = pd.Timestamp.now().strftime("%Y%m%d%H%M")

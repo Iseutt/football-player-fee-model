@@ -14,6 +14,7 @@ END = "2026-07-06"        # last scrape date of the source
 MV_LAG_DAYS = 30          # a valuation must be at least this old to be used
 TOP_N_SQUAD = 18
 YOUTH = r"U\d\d|Youth|Yth| II$| B$| 2$| 2 |Res\.?$"
+NO_CLUB = ["Without Club", "Unknown", "Retired", "Career break", "Ban"]
 
 PERF = ["min_365", "games_365", "goals_365", "assists_365", "min_league_365", "min_uefa_365",
         "min_seller_365", "min_365_730", "career_min", "career_games", "career_goals"]
@@ -116,8 +117,10 @@ def load_tables():
     names = pd.concat([t[["from_club_id", "from_club_name"]].set_axis(["id", "name"], axis=1),
                        t[["to_club_id", "to_club_name"]].set_axis(["id", "name"], axis=1)])
     names = names.dropna().drop_duplicates("id").set_index("id").name.to_dict()
+    # destinations that are not clubs: id -> label
+    no_club = (t[t.to_club_name.isin(NO_CLUB)].drop_duplicates("to_club_id").set_index("to_club_id").to_club_name.to_dict())
     return SimpleNamespace(transfers=t, players=read("players", parse_dates=["date_of_birth"]), val=val, app=app,
-                           comps=comps, cs=cs, lg=lg, country=club_countries(comps), names=names)
+                           comps=comps, cs=cs, lg=lg, country=club_countries(comps), names=names, no_club=no_club)
 
 
 # --------------------------------------------------------------------------- feature blocks
@@ -143,11 +146,23 @@ def history_features(s, T):
     h = T.transfers[["player_id", "transfer_date", "to_club_id", "transfer_fee", "cum_n", "cum_last_paid",
                      "cum_max_paid"]].rename(columns={"transfer_date": "h_date", "to_club_id": "h_to",
                                                       "transfer_fee": "h_fee"}).sort_values("h_date")
-    m = pd.merge_asof(s[["tid", "player_id", "transfer_date"]].sort_values("transfer_date"), h,
-                      left_on="transfer_date", right_on="h_date", by="player_id",
-                      allow_exact_matches=False).set_index("tid").reindex(s.tid)
-    m.index = s.index
-    if s.from_club_id.isna().any():     # valuation rows: current club = last destination, else last club played for
+
+    def last_move(rows, moves, days):
+        """Last move of each player before the date (plus `days`), aligned on the rows."""
+        q = rows[["tid", "player_id", "transfer_date"]].assign(lookup=rows.transfer_date + pd.Timedelta(days=days))
+        return pd.merge_asof(q.sort_values("lookup"), moves, left_on="lookup", right_on="h_date", by="player_id",
+                             allow_exact_matches=False).set_index("tid").reindex(rows.tid).set_axis(rows.index)
+
+    # a transfer: what was known strictly before it. A valuation: the player's club on that day, so a move dated
+    # the same day counts, and the club is the last real one (not "Without Club", "Retired", ...)
+    val = s.from_club_id.isna()
+    m = last_move(s, h, 0)
+    s["status"] = ""
+    if val.any():
+        real = last_move(s[val], h[~h.h_to.isin(T.no_club)], 1)
+        latest = last_move(s[val], h, 1).h_to
+        s.loc[val, "status"] = latest.map(T.no_club).fillna("").values
+        m = pd.concat([m[~val], real]).reindex(s.index)
         a = T.app[["player_id", "date", "player_club_id"]].sort_values("date")
         la = pd.merge_asof(s[["tid", "player_id", "transfer_date"]].sort_values("transfer_date"), a,
                            left_on="transfer_date", right_on="date", by="player_id",

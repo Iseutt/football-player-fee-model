@@ -1,6 +1,6 @@
 {
  "n_clubs": 508,
- "n_players": 19435,
+ "n_players": 19326,
  "range": [
   2.5585246591790676,
   2.1152541167093366,
@@ -14,9 +14,9 @@
  },
  "rounds": 1699,
  "n_train": 14989,
- "clipped": 0.005981780576887627,
- "spread_p10_p90": 3.7734888578415497,
- "median_vs_no_buyer": 1.0513903960773763,
+ "clipped": 0.006106171686626722,
+ "spread_p10_p90": 3.803797842997156,
+ "median_vs_no_buyer": 1.0510073026938342,
  "example_player": "Erling Haaland",
  "example_no_buyer": 219543264.2209852,
  "example": [

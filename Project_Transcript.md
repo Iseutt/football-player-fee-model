@@ -254,6 +254,47 @@ and again for each yearly model and for the full model (0.72 above EUR 80m).
 `src/value_players.py`, `src/make_stats_pdf.py` (section 10), `src/make_method_pdf.py`,
 `docs/index.html`, `outputs/expensive_player_scaling.csv`, this file.
 
+## Step 9 — Club picker by country, clubs on the player chart, wrong clubs fixed (4 October 2026)
+
+**Asked**: (1) a more attractive club search, by country, the eight biggest leagues first, the
+other countries in alphabetical order, each country opening onto its divisions; (2) on the
+player chart, the club the player was at each year, with logo and name; (3) check the club of
+every listed player, because some were wrong (Balerdi shown at Marseille instead of Roma,
+Jacquet at Rennes instead of Liverpool).
+
+**Done**:
+
+- **Club picker**: countries with their flag; the countries of the eight richest leagues first
+  (by average squad value: England, Spain, Germany, Italy, France, Brazil, Saudi Arabia,
+  Portugal), then the others alphabetically. A country opens onto its league (with its logo)
+  and its clubs (with crests). Typing searches clubs, leagues and countries.
+- **Only first divisions exist in the data** (30 leagues in 30 countries), so each country shows
+  one league. Ligue 2 or the Championship cannot be buyers: the source has no club data for them.
+- **Player chart**: under each year, the crest and name of the club the player was registered
+  with on 1 July of that year.
+- **Wrong clubs, cause found**: a player's club was taken from his last transfer strictly
+  before the valuation date, so the 1,195 transfers dated exactly 1 July 2026 were ignored
+  (Jacquet to Liverpool, Gordon to Barcelona, Højlund to Napoli, Hincapié to Arsenal). For a
+  valuation, a move dated the same day now counts. Training rows are unchanged (verified).
+- **Free agents**: 858 players whose last move is to "Without Club" on the valuation date
+  (for example Konaté) are labelled as free agents, with their last real club. Players whose
+  last move is "Retired" or "Career break" are no longer listed, nor is Diogo Jota (deceased).
+  The list goes from 19,435 to 19,326 players.
+- **Checked against the players table of the source**: it is less reliable than the transfer
+  table (it still shows Xavi Simons at Leipzig and Lookman at Atalanta), so it is not used.
+- **Not fixable from the current data**: Balerdi. The snapshot of 6 July 2026 has no transfer of
+  his after 2021 and still lists him at Marseille. Any move made or recorded after 6 July 2026
+  needs a new download of the data, which would change every number of the project.
+- A player on loan on 1 July is shown at the club he was loaned to; a loan that ended on 30 June
+  counts as ended.
+- The model prices of the players who moved on 1 July changed, because their selling club is now
+  the new one.
+
+**Files**: `src/features.py` (club on the valuation date), `src/value_players.py`,
+`docs/index.html`, `docs/data.js`, `docs/buyers.js`, `docs/buyers/`.
+
+**Open**: refresh the data to a later snapshot or not.
+
 ---
 
 ## Open points

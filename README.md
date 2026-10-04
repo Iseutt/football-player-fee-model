@@ -35,7 +35,7 @@ how far the prices can be trusted. `Project_Transcript.md` is the log of every s
 
 ## Website
 
-`docs/index.html` lists 19,435 active players with the model price next to the Transfermarkt
+`docs/index.html` lists 19,326 active players with the model price next to the Transfermarkt
 value, and both prices on 1 July of 2022 to 2026. Each yearly price comes from a model trained
 only on transfers before that date. Open the file in a browser; no server is needed.
 
