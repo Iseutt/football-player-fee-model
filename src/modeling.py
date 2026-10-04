@@ -4,6 +4,8 @@ from pathlib import Path
 
 import lightgbm as lgb
 import numpy as np
+import pandas as pd
+from sklearn.model_selection import GroupKFold
 
 OUT = Path("outputs")
 VALID_START, TEST_START = "2023-01-01", "2024-01-01"
@@ -86,3 +88,66 @@ def conformal_q(abs_res, coverage):
     """Split-conformal quantile of absolute calibration residuals."""
     n = len(abs_res)
     return np.quantile(abs_res, min(1, np.ceil((n + 1) * coverage) / n))
+
+
+# --------------------------------------------------------------------------- expensive players
+# For expensive players the raw correction is too strong: out of sample, the real correction is only about
+# 60% of the predicted one above EUR 40m. The correction is therefore scaled down as the Transfermarkt value
+# rises: untouched below `lo`, multiplied by (1 - c) above `hi`, in between in proportion to the log value.
+SHRINK_KNOTS = [(lo, hi) for lo in (1e6, 2e6, 5e6, 10e6) for hi in (20e6, 40e6, 80e6)]
+
+
+def shrink_weight(log_mv, lo, hi):
+    return np.clip((log_mv - np.log(lo)) / (np.log(hi) - np.log(lo)), 0, 1)
+
+
+def fit_shrink(pred, y, log_mv):
+    """Least-squares scale-down of out-of-sample corrections `pred` towards the observed ones `y`."""
+    best = None
+    for lo, hi in SHRINK_KNOTS:
+        x = shrink_weight(log_mv, lo, hi) * pred
+        c = float(np.clip(((pred - y) * x).sum() / (x ** 2).sum(), 0, 1))
+        sse = ((y - pred + c * x) ** 2).sum()
+        if best is None or sse < best[0]:
+            best = (sse, {"lo": lo, "hi": hi, "c": c})
+    return best[1]
+
+
+def apply_shrink(pred, log_mv, s):
+    return pred * (1 - s["c"] * shrink_weight(log_mv, s["lo"], s["hi"]))
+
+
+def oof_predict(df, feats, target, rounds, k=5):
+    """Out-of-fold predictions, folds grouped by player."""
+    pred = pd.Series(np.nan, index=df.index)
+    for tr, te in GroupKFold(n_splits=k).split(df, groups=df.player_id):
+        pred.iloc[te] = fit_lgb(df.iloc[tr], None, feats, target, rounds).predict(df.iloc[te][feats])
+    return pred
+
+
+def fit_ratio_model(df, feats, rounds):
+    """Fee / value model on `df` with its scale-down for expensive players. Returns (model, shrink)."""
+    s = fit_shrink(oof_predict(df, feats, "log_ratio", rounds), df.log_ratio, df.log_mv_pre)
+    return fit_lgb(df, None, feats, "log_ratio", rounds), s
+
+
+def predict_ratio(model, shrink, df, feats):
+    return apply_shrink(model.predict(df[feats]), df.log_mv_pre.values, shrink)
+
+
+# --------------------------------------------------------------------------- ranges by price level
+# Errors are much smaller for expensive players, so the width of the range is set separately for each level
+# of Transfermarkt value.
+RANGE_EDGES = [1e6, 5e6, 20e6]
+
+
+def conformal_bands(abs_res, mv, coverage, min_n=50):
+    """Split-conformal quantile per value band (the overall one where a band has too few transfers)."""
+    abs_res, band = np.asarray(abs_res), np.digitize(np.asarray(mv), RANGE_EDGES)
+    overall = conformal_q(abs_res, coverage)
+    return np.array([conformal_q(abs_res[band == b], coverage) if (band == b).sum() >= min_n else overall
+                     for b in range(len(RANGE_EDGES) + 1)])
+
+
+def band_q(q, mv):
+    return np.asarray(q)[np.digitize(np.asarray(mv), RANGE_EDGES)]

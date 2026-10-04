@@ -151,7 +151,9 @@ group_share = share.groupby(GROUP).sum().loc[group_gain.index]
 
 vals = pd.read_parquet(OUT / "player_values.parquet")
 last = vals[vals.date == vals.date.max()]
-lo, hi = (last.model_lo / last.model_value).median(), (last.model_hi / last.model_value).median()
+width = (last.model_hi / last.model_value).groupby(pd.cut(last.tm_value, [0, 1e6, 5e6, 20e6, 1e12])).median()
+scaling = pd.read_csv(OUT / "expensive_player_scaling.csv", index_col=0)
+SV, SA = scaling.loc["Model V"], scaling.loc["Model A"]
 
 tr = prepare(pd.read_parquet("data/processed/transfers_model.parquet"))
 tr = tr[tr.log_mv_pre.notna()]
@@ -385,6 +387,15 @@ story = [
         "<b>Sample rules.</b> Permanent transfers with a disclosed fee of at least EUR 50,000. Free transfers, "
         "undisclosed fees and suspected loan fees are excluded because they give no usable price.",
         "<b>Who is valued.</b> Every player given a Transfermarkt value in the 18 months before the date.",
+        "<b>Scale-down for expensive players.</b> The raw correction is too strong when the Transfermarkt value is "
+        "high: bonuses for being young, being sold from England or having cost a lot are learned mostly on cheap "
+        "players, and for a star the Transfermarkt value already contains them. On unseen transfers above 40m, "
+        "only about 60%% of the predicted correction showed up in the real fee. The correction is therefore left "
+        "untouched below EUR %.0fm, multiplied by %.2f above EUR %.0fm, and in between in proportion. These "
+        "numbers are estimated on past transfers with out-of-sample predictions, again for each yearly model. "
+        "Example: Estêvão (Transfermarkt value EUR 80m) came out at EUR 166m before this step and at %s after."
+        % (SV.lo / 1e6, 1 - SV.c, SV.hi / 1e6,
+           "EUR %.0fm" % (last[last.player_id == 1056993].model_value.iloc[0] / 1e6)),
     ]),
 
     P("10. How far to trust it", h2),
@@ -398,12 +409,13 @@ story = [
     Spacer(1, 8),
     *bullets([
         "<b>The model range</b> on the website is an 80%% interval: in the year before each date, four real fees in "
-        "five fell inside it. It runs from about %.1f to %.1f times the model price, which is wide. The model is "
-        "reliable on averages over many players, much less on one player." % (lo, hi),
+        "five fell inside it. Its width depends on the Transfermarkt value: the price divided and multiplied by "
+        "%.1f for players under 1m, %.1f from 1m to 5m, %.1f from 5m to 20m and %.1f above 20m. This is wide. The "
+        "model is reliable on averages over many players, much less on one player." % tuple(width),
         "<b>Selection.</b> The model only learns from players who were sold. Players whom clubs refuse to sell may "
         "differ from them in ways the data does not show.",
-        "<b>Top players come out above Transfermarkt.</b> This may be the real premium paid for stars, or an "
-        "effect of selection. It has not been tested.",
+        "<b>The most expensive players.</b> Above 40m the model is only slightly more accurate than the "
+        "Transfermarkt value alone; its price there should be read as Transfermarkt with a small correction.",
         "<b>Lower leagues.</b> Errors are largest for cheap players and for clubs outside the 14 covered leagues.",
         "<b>Full statistics</b> on the reliability of the prices are in Statistics.pdf.",
     ]),
@@ -465,8 +477,10 @@ story = [
         "<b>How much the buyer changes the price.</b> For the typical player, the price with a buyer in the top "
         "tenth of clubs is %.1f times the price with a buyer in the bottom tenth."
         % buy["spread_p10_p90"],
-        "<b>The range.</b> An 80%% interval, from the price divided by %.2f to the price multiplied by %.2f. It is "
-        "narrower than the range of the website model because the buyer is no longer unknown." % (buy["range"], buy["range"]),
+        "<b>The range.</b> An 80%% interval whose width depends on the Transfermarkt value: the price divided and "
+        "multiplied by %.1f under 1m, %.1f from 1m to 5m, %.1f from 5m to 20m and %.1f above 20m. The same "
+        "scale-down for expensive players applies (correction multiplied by %.2f above EUR %.0fm)."
+        % (*buy["range"], 1 - buy["shrink"]["c"], buy["shrink"]["hi"] / 1e6),
     ]),
     P("Example: %s. With no buyer chosen the website model gives %s. With a buyer:"
       % (buy["example_player"], eur(buy["example_no_buyer"]))),

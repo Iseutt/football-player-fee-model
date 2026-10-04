@@ -1,64 +1,74 @@
 {
  "n_clubs": 508,
  "n_players": 19435,
- "range": 2.16491388356686,
+ "range": [
+  2.5585246591790676,
+  2.1152541167093366,
+  1.9218028293691904,
+  1.516995268217687
+ ],
+ "shrink": {
+  "lo": 5000000.0,
+  "hi": 80000000.0,
+  "c": 0.28065013001574224
+ },
  "rounds": 1699,
  "n_train": 14989,
- "clipped": 0.0062677124839714046,
+ "clipped": 0.005981780576887627,
  "spread_p10_p90": 3.7734888578415497,
- "median_vs_no_buyer": 1.0461587160255388,
+ "median_vs_no_buyer": 1.0513903960773763,
  "example_player": "Erling Haaland",
- "example_no_buyer": 232316798.11835924,
+ "example_no_buyer": 219543264.2209852,
  "example": [
   [
    "NEOM SC",
    "Saudi Pro League",
-   304392311.1237267
-  ],
-  [
-   "Al-Ahli",
-   "Saudi Pro League",
-   292456917.8868449
+   269971761.5152006
   ],
   [
    "Al-Qadsiah",
    "Saudi Pro League",
-   292456917.8868449
+   264625962.46748737
   ],
   [
    "Al-Nassr",
    "Saudi Pro League",
-   286665882.912068
+   259386017.33315435
+  ],
+  [
+   "Al-Ahli",
+   "Saudi Pro League",
+   259386017.33315435
   ],
   [
    "Al-Ittihad",
    "Saudi Pro League",
-   286665882.912068
+   259386017.33315435
   ],
   [
    "NK Varazdin",
    "Supersport Hnl",
-   79703808.21690282
-  ],
-  [
-   "Asteras Tripoli",
-   "Super League 1",
-   81313931.94811982
+   103370266.89833984
   ],
   [
    "FC Arges",
    "Superliga (Romania)",
-   82956582.33631627
+   105458484.80860971
+  ],
+  [
+   "Asteras Tripoli",
+   "Super League 1",
+   105458484.80860971
   ],
   [
    "UTA Arad",
    "Superliga (Romania)",
-   82956582.33631627
+   107588887.51893489
   ],
   [
    "Livingston FC",
    "Scottish Premiership",
-   89865792.8234443
+   111979673.31308042
   ]
  ]
 }

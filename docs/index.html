@@ -226,8 +226,8 @@ select.field { width: auto; max-width: 100%; height: 40px; font-size: 13px; curs
   </details>
 </main>
 
-<script src="data.js?v=202610041530"></script>
-<script src="buyers.js?v=202610041530"></script>
+<script src="data.js?v=202610041607"></script>
+<script src="buyers.js?v=202610041607"></script>
 <script>
 const D = window.DATA, YEARS = D.dates.map(d => d.slice(0, 4)), LAST = YEARS.length - 1, PER = 40;
 const B = window.BUYERS || { clubs: [] };
@@ -294,8 +294,8 @@ function applyBuyer(club) {
     p.unusual = !!v && (p.tm < club[3] || p.tm > club[4]);
     if (!v) { p.model = p.base; p.lo = p.baseLo; p.hi = p.baseHi; }
     else if (v[p.idx] === -128) { p.model = p.lo = p.hi = null; }
-    else { const x = p.tm * Math.exp(v[p.idx] * B.step);
-      p.model = Math.round(x); p.lo = Math.round(x / B.range); p.hi = Math.round(x * B.range); }
+    else { const x = p.tm * Math.exp(v[p.idx] * B.step), rg = B.range[B.range_edges.filter(e => p.tm >= e).length];   // range by level of value
+      p.model = Math.round(x); p.lo = Math.round(x / rg); p.hi = Math.round(x * rg); }
     p.diff = p.model == null ? null : p.model / p.tm - 1;
   }
   $("colPrice").textContent = v ? "Price for " + club[1] : "Model price";

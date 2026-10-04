@@ -12,23 +12,26 @@ Test set: 5,252 paid transfers from 2024 to mid-2026, never seen in training (tr
 |---|---|---|---|
 | Naive: fee = Transfermarkt value | 0.942 | 50% | 0.64 |
 | Hedonic linear (ridge) | 0.694 | 39% | 0.80 |
-| **Model A**: LightGBM, all features | 0.674 | 38% | 0.81 |
-| Model V: LightGBM, no buyer information | 0.760 | 41% | 0.77 |
-| Model B: LightGBM, no Transfermarkt values | 0.749 | 43% | 0.77 |
+| **Model A**: LightGBM, all features | 0.673 | 38% | 0.82 |
+| Model V: LightGBM, no buyer information | 0.758 | 41% | 0.77 |
+| Model B: LightGBM, no Transfermarkt values | 0.749 | 44% | 0.77 |
 
 - Model A is the arm's-length price for an observed transfer.
 - Model B is the robustness check that does not rely on crowd-sourced values.
 - Model V prices players who are not being sold, so it cannot use the buyer. The website uses it.
 - 80% and 90% conformal prediction intervals reach their target coverage on the test set
-  (81.0% and 89.6%), but they are wide: the 80% interval spans a factor of about 5.
+  (80.7% and 89.6%), but they are wide: the 80% interval spans a factor of about 5.
 
+- For expensive players the predicted correction to the Transfermarkt value is scaled down (untouched
+  below EUR 5m, multiplied by 0.65 above EUR 40m): out of sample, the raw correction was too strong there.
+  Ranges on the website are set by level of Transfermarkt value.
 - Position statistics (goals and assists per 90 minutes, goals conceded, clean sheets, team results
   with the player on the pitch, cards, minutes per game) are in all models. One shared model is
   kept: a separate model per position is worse (0.796 against 0.760 for Model V).
 
 Full tables are in `outputs/`, figures in `outputs/figures/`. `Player_Valuation_Method.pdf` explains
 the method and gives the weight of every parameter, overall and by position; `Statistics.pdf` tests
-how far the prices can be trusted.
+how far the prices can be trusted. `Project_Transcript.md` is the log of every step of the project.
 
 ## Website
 

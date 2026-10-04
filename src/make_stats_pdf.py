@@ -16,7 +16,8 @@ from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Tabl
 import scipy.stats as st
 import statsmodels.api as sm
 
-from modeling import FEATS_A, FEATS_V, OUT, conformal_q, fit_lgb, prepare
+from modeling import (FEATS_A, FEATS_V, OUT, band_q, conformal_bands, fit_lgb, fit_ratio_model, predict_ratio,
+                      prepare)
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
@@ -39,6 +40,8 @@ UPDATES = [
                        "coverage of the ranges, and a scorecard defining what statistically right means."),
     ("4 October 2026", "Step 3. Model changed: eleven position statistics added (54 parameters instead of 43 for the "
                        "website model). All figures in this document recomputed with the new model."),
+    ("4 October 2026", "Step 4. Model changed: the correction is scaled down for expensive players and the ranges are set "
+                       "by level of Transfermarkt value (section 10). All figures recomputed."),
 ]
 
 
@@ -50,16 +53,20 @@ def test_errors():
     df["log_ratio"] = df.log_fee - df.log_mv_pre
     a = df[df.log_mv_pre.notna()]
     tr, va, te = a[a.split == "train"], a[a.split == "valid"], a[a.split == "test"]
-    price, cover = {"Transfermarkt": te.log_mv_pre}, {}
+    price, cover, raw, shrinks = {"Transfermarkt": te.log_mv_pre}, {}, {}, {}
     for name, feats in [("Website model", FEATS_V), ("Full model", FEATS_A)]:
         rounds = fit_lgb(tr, va, feats, "log_ratio").best_iteration
-        price[name] = fit_lgb(pd.concat([tr, va]), None, feats, "log_ratio", rounds).predict(te[feats]) + te.log_mv_pre
+        model, shrinks[name] = fit_ratio_model(pd.concat([tr, va]), feats, rounds)
+        raw[name] = model.predict(te[feats])                 # correction before the scale-down for expensive players
+        price[name] = predict_ratio(model, shrinks[name], te, feats) + te.log_mv_pre
         # ranges: model trained before 2023, width set on 2023, checked on the test set
-        m = fit_lgb(tr, None, feats, "log_ratio", rounds)
-        res_va, res_te = (va.log_ratio - m.predict(va[feats])).abs(), (te.log_ratio - m.predict(te[feats])).abs()
-        cover[name] = {c: (int((res_te <= conformal_q(res_va, c)).sum()), len(te)) for c in (0.8, 0.9)}
+        m, s = fit_ratio_model(tr, feats, rounds)
+        res_va = (va.log_ratio - predict_ratio(m, s, va, feats)).abs()
+        res_te = (te.log_ratio - predict_ratio(m, s, te, feats)).abs()
+        cover[name] = {c: (int((res_te <= band_q(conformal_bands(res_va, va.mv_pre, c), te.mv_pre)).sum()), len(te))
+                       for c in (0.8, 0.9)}
     price = pd.DataFrame(price)
-    return price.rsub(te.log_fee, axis=0), np.exp(price), len(tr) + len(va), te, cover
+    return price.rsub(te.log_fee, axis=0), np.exp(price), len(tr) + len(va), te, cover, raw, shrinks
 
 
 def boot_ci(x, f, rng):
@@ -383,7 +390,52 @@ def significance_sections(names, S, G, cover, n):
     ]
 
 
-def build(err, price, n_fit, te, cover):
+def expensive_section(te, err, raw, shrinks):
+    """Does the correction go too far for expensive players, and does the scale-down fix it? (website model)"""
+    k, y = "Website model", (te.log_fee - te.log_mv_pre).values
+    before, after, s = raw[k], y - err[k].values, shrinks[k]
+    mv = te.mv_pre.values
+    rows = [["Transfermarkt value", "Transfers", "Real correction per unit predicted: before", "after",
+             "Typical error: before", "after", "Transfermarkt"]]
+    for lab, lo, hi in [("under 5m", 0, 5e6), ("5m to 20m", 5e6, 20e6), ("20m to 40m", 20e6, 40e6), ("over 40m", 40e6, 1e12)]:
+        m = (mv >= lo) & (mv < hi)
+        rows.append([lab, format(int(m.sum()), ","), "%.2f" % np.polyfit(before[m], y[m], 1)[0], "%.2f" % np.polyfit(after[m], y[m], 1)[0],
+                     "%.3f" % np.sqrt(((y[m] - before[m]) ** 2).mean()), "%.3f" % np.sqrt(((y[m] - after[m]) ** 2).mean()),
+                     "%.3f" % np.sqrt((y[m] ** 2).mean())])
+    d = (y - before) ** 2 - (y - after) ** 2
+    hot, top = (mv >= 20e6) & (np.exp(before) >= 1.3), mv >= 40e6
+    top_model, top_tm = np.sqrt(((y[top] - after[top]) ** 2).mean()), np.sqrt((y[top] ** 2).mean())
+    return [
+        P("10. Expensive players: the correction went too far", h2),
+        P("For a player Transfermarkt values highly, the model stacked bonuses (young, sold from England, expensive "
+          "last transfer) that the Transfermarkt value already contains. The check: when the model predicts a "
+          "correction, how much of it shows up in the real fee? 1 means all of it. Below, the website model on the "
+          "%s unseen transfers, before and after the fix." % format(len(y), ",")),
+        table(rows, [0.19, 0.11, 0.22, 0.09, 0.15, 0.09, 0.15]),
+        Spacer(1, 6),
+        *bullets([
+            "<b>Before.</b> The correction was reliable for cheap players and too strong for expensive ones. On the "
+            "%d transfers valued at 20m or more where the model announced at least 1.3 times the Transfermarkt "
+            "value, it announced a median of %.2f times and the real fees came in at %.2f times."
+            % (hot.sum(), np.exp(np.median(before[hot])), np.exp(np.median(y[hot]))),
+            "<b>The fix.</b> The correction is scaled down as the Transfermarkt value rises: untouched below "
+            "EUR %.0fm, multiplied by %.2f above EUR %.0fm, in between in proportion. These three numbers are "
+            "estimated on the training transfers only, with predictions made out of sample."
+            % (s["lo"] / 1e6, 1 - s["c"], s["hi"] / 1e6),
+            "<b>After.</b> On the same %d transfers the model now announces %.2f times. Over the whole test set the "
+            "gain in squared error has a t-statistic of %.1f. Above 40m the model's error is %.3f against %.3f for "
+            "the Transfermarkt value on its own: %s."
+            % (hot.sum(), np.exp(np.median(after[hot])), d.mean() / (d.std(ddof=1) / np.sqrt(len(d))), top_model, top_tm,
+               "the model adds something even for the most expensive players" if top_model < 0.97 * top_tm
+               else "for the most expensive players the model is no better than Transfermarkt"),
+            "<b>Ranges.</b> The width of the 80% and 90% ranges is now set separately for four levels of "
+            "Transfermarkt value (under 1m, 1m to 5m, 5m to 20m, over 20m), because errors are much smaller for "
+            "expensive players. Tests 7 and 8 of the scorecard use these ranges.",
+        ]),
+    ]
+
+
+def build(err, price, n_fit, te, cover, raw, shrinks):
     rng = np.random.default_rng(0)
     names = ["Transfermarkt", "Website model", "Full model"]
     S = {k: stats(err[k], rng) for k in names}
@@ -545,8 +597,9 @@ def build(err, price, n_fit, te, cover):
         P("Columns 2 to 5: Transfermarkt. Columns 6 to 9: website model.", small),
 
         *significance_sections(names, S, G, cover, tm["n"]),
+        *expensive_section(te, err, raw, shrinks),
 
-        P("10. Limits of these statistics", h2),
+        P("11. Limits of these statistics", h2),
         *bullets([
             "<b>A fee is not the true value.</b> Two clubs can agree on different fees for the same player "
             "depending on urgency, contract length or the buyer. Part of the spread is this deal noise, which "

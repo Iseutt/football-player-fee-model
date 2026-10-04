@@ -10,25 +10,31 @@ import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import RidgeCV
-from sklearn.model_selection import GroupKFold
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-from modeling import (CAT, FEATS_A, FEATS_B, FEATS_V, FEATS_V_OLD, OUT, POSITIONS, conformal_q, fit_lgb, metrics,
-                      params, prepare)
+from modeling import (CAT, FEATS_A, FEATS_B, FEATS_V, FEATS_V_OLD, OUT, POSITIONS, apply_shrink, band_q,
+                      conformal_bands, conformal_q, fit_lgb, fit_ratio_model, fit_shrink, metrics, oof_predict, params,
+                      predict_ratio, prepare)
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
 FIG = OUT / "figures"
+SHRINKS = {}        # scale-down fitted for each fee / value model, by number of features
 
 
 def lgb_predict(df, feats, target, offset):
-    """Tune rounds on 2023, refit on train+valid, predict the test set."""
+    """Tune rounds on 2023, refit on train+valid, predict the test set.
+    Fee / value models (those with an offset) get the scale-down for expensive players."""
     tr, va, te = df[df.split == "train"], df[df.split == "valid"], df[df.split == "test"]
     rounds = fit_lgb(tr, va, feats, target).best_iteration
-    model = fit_lgb(pd.concat([tr, va]), None, feats, target, rounds)
-    return model, rounds, model.predict(te[feats]) + (te[offset] if offset else 0)
+    if not offset:
+        model = fit_lgb(pd.concat([tr, va]), None, feats, target, rounds)
+        return model, rounds, model.predict(te[feats])
+    model, shrink = fit_ratio_model(pd.concat([tr, va]), feats, rounds)
+    SHRINKS[len(feats)] = shrink
+    return model, rounds, predict_ratio(model, shrink, te, feats) + te[offset]
 
 
 def hedonic(df, feats):
@@ -62,13 +68,17 @@ def segments(te, pred, naive):
 def intervals(a, rounds):
     """Prediction intervals, calibrated on 2023 and checked on the test set (model trained on < 2023 only)."""
     tr, va, te = a[a.split == "train"], a[a.split == "valid"], a[a.split == "test"]
-    m = fit_lgb(tr, None, FEATS_A, "log_ratio", rounds)
-    res_va, res_te = (va.log_ratio - m.predict(va[FEATS_A])).abs(), (te.log_ratio - m.predict(te[FEATS_A])).abs()
+    m, s = fit_ratio_model(tr, FEATS_A, rounds)
+    res_va = (va.log_ratio - predict_ratio(m, s, va, FEATS_A)).abs()
+    res_te = (te.log_ratio - predict_ratio(m, s, te, FEATS_A)).abs()
     rows = []
     for cov in (0.8, 0.9):
         q = conformal_q(res_va, cov)
         rows.append({"method": "split conformal", "target": cov, "coverage_test": (res_te <= q).mean(),
                      "median_width_factor": np.exp(2 * q)})
+        qb = band_q(conformal_bands(res_va, va.mv_pre, cov), te.mv_pre)      # width set per level of value
+        rows.append({"method": "split conformal by value band", "target": cov, "coverage_test": (res_te <= qb).mean(),
+                     "median_width_factor": np.exp(2 * np.median(qb))})
         # conformalised quantile regression: width adapts to the transfer
         lo, hi = (fit_lgb(tr, None, FEATS_A, "log_ratio", rounds, params(objective="quantile", alpha=al))
                   for al in ((1 - cov) / 2, 1 - (1 - cov) / 2))
@@ -131,11 +141,10 @@ def position_report(a, te, model_v, preds):
 
 def cross_fit(df, feats, target, offset, rounds, k=5):
     """Out-of-fold predictions, folds grouped by player, so every gap is out-of-sample."""
-    pred = pd.Series(np.nan, index=df.index)
-    for tr, te in GroupKFold(n_splits=k).split(df, groups=df.player_id):
-        m = fit_lgb(df.iloc[tr], None, feats, target, rounds)
-        pred.iloc[te] = m.predict(df.iloc[te][feats])
-    return pred + (df[offset] if offset else 0)
+    pred = oof_predict(df, feats, target, rounds, k)
+    if not offset:
+        return pred
+    return apply_shrink(pred, df.log_mv_pre, fit_shrink(pred, df.log_ratio, df.log_mv_pre)) + df[offset]
 
 
 def main():
@@ -177,6 +186,8 @@ def main():
     print(pos_err.round(3).to_string(index=False))
     pd.set_option("display.width", 250)
     print(res.round(3).to_string(index=False), "\nrounds A/B:", rounds_a, rounds_b)
+    shrinks = pd.DataFrame({"Model A": SHRINKS[len(FEATS_A)], "Model V": SHRINKS[len(FEATS_V)]}).T
+    print(shrinks.to_string())
     print(seg.round(3).to_string(index=False))
     print(itv.round(3).to_string(index=False))
     print(imp.head(15).round(3).to_string())
@@ -196,6 +207,7 @@ def main():
     gain_share(model_v, FEATS_V).to_csv(OUT / "feature_importance_v.csv")
     gain_share(model_v_old, FEATS_V_OLD).to_csv(OUT / "feature_importance_v_43.csv")
     pos_err.to_csv(OUT / "position_errors_test.csv", index=False)
+    shrinks.to_csv(OUT / "expensive_player_scaling.csv")
     pos_share.to_csv(OUT / "feature_share_by_position.csv")
     model_a.save_model(str(OUT / "model_a.txt"))
     cols = ["tid", "player_id", "player_name", "transfer_date", "from_club_id", "from_club_name", "to_club_id",

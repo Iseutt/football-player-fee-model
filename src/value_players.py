@@ -15,7 +15,8 @@ import numpy as np
 import pandas as pd
 
 from features import build_features, load_tables, season_of
-from modeling import CAT, FEATS_A, FEATS_V, OUT, conformal_q, fit_lgb, prepare
+from modeling import (CAT, FEATS_A, FEATS_V, OUT, RANGE_EDGES, apply_shrink, band_q, conformal_bands, fit_lgb,
+                      fit_ratio_model, predict_ratio, prepare)
 
 DATES = pd.to_datetime([f"{y}-07-01" for y in range(2022, 2027)])
 ACTIVE_DAYS = 548      # a player is active if Transfermarkt valued him in the 18 months before the date
@@ -65,9 +66,10 @@ def buyer_prices(p, buyers, tr, rounds, T, leagues, version):
     d = DATES[-1]
     past = tr[tr.transfer_date < d]
     cal = past[past.transfer_date >= d - pd.Timedelta(days=365)]
-    m = fit_lgb(past[past.transfer_date < d - pd.Timedelta(days=365)], None, FEATS_A, "log_ratio", rounds)
-    q = conformal_q((cal.log_ratio - m.predict(cal[FEATS_A])).abs(), COVERAGE)
-    m = fit_lgb(past, None, FEATS_A, "log_ratio", rounds)
+    m, shrink = fit_ratio_model(past, FEATS_A, rounds)
+    m_cal = fit_lgb(past[past.transfer_date < d - pd.Timedelta(days=365)], None, FEATS_A, "log_ratio", rounds)
+    q = conformal_bands((cal.log_ratio - predict_ratio(m_cal, shrink, cal, FEATS_A)).abs(), cal.mv_pre, COVERAGE)
+    to_shown = (p.log_mv_pre - np.log(p.tm_value)).values      # the site multiplies by the latest Transfermarkt value
     out = SITE / "buyers"
     shutil.rmtree(out, ignore_errors=True)
     out.mkdir(parents=True)
@@ -79,7 +81,8 @@ def buyer_prices(p, buyers, tr, rounds, T, leagues, version):
             x[c] = pd.Categorical([v] * len(x), categories=p[c].cat.categories) if c in CAT else v
         x["same_league"] = ((p.sell_league.astype(str) == b.buy_league) & (b.buy_league != "OTHER")).astype(int).values
         x["same_country"] = ((p.sell_country.astype(str) == b.buy_country) & (b.buy_country != "Unknown")).astype(int).values
-        c = np.clip(np.round(m.predict(x) / BUYER_STEP), -127, 127).astype(np.int8)
+        c = apply_shrink(m.predict(x), p.log_mv_pre.values, shrink) + to_shown
+        c = np.clip(np.round(c / BUYER_STEP), -127, 127).astype(np.int8)
         c[(p.from_club_id == b.to_club_id).values] = -128           # the player is already at this club
         cid = int(b.to_club_id)
         (out / f"{cid}.js").write_text("window.BUYER_DATA=window.BUYER_DATA||{};window.BUYER_DATA[%d]=\"%s\";"
@@ -87,7 +90,8 @@ def buyer_prices(p, buyers, tr, rounds, T, leagues, version):
         clubs.append([cid, T.names.get(cid, str(cid)), leagues.get(str(b.buy_league), str(b.buy_league)),
                       *usual.get(str(b.buy_league), usual_all)])
         allc.append(c)
-    index = {"version": version, "players": len(p), "step": BUYER_STEP, "range": float(np.exp(q)),
+    index = {"version": version, "players": len(p), "step": BUYER_STEP, "range": [float(v) for v in np.exp(q)],
+             "range_edges": [int(e / 1000) for e in RANGE_EDGES],
              "fields": ["id", "name", "league", "usual_lo", "usual_hi"], "clubs": sorted(clubs, key=lambda r: (r[2], r[1]))}
     (SITE / "buyers.js").write_text("window.BUYERS = " + json.dumps(index, ensure_ascii=False, separators=(",", ":")) + ";",
                                     encoding="utf-8")
@@ -97,14 +101,15 @@ def buyer_prices(p, buyers, tr, rounds, T, leagues, version):
     order = np.argsort(a[:, top])
     order = order[~np.isnan(a[order, top])]
     ex = [[clubs[i][1], clubs[i][2], float(p.tm_value.values[top] * np.exp(a[i, top]))] for i in list(order[-5:][::-1]) + list(order[:5])]
-    summary = {"n_clubs": len(clubs), "n_players": len(p), "range": float(np.exp(q)), "rounds": int(rounds),
+    summary = {"n_clubs": len(clubs), "n_players": len(p), "range": [float(v) for v in np.exp(q)], "shrink": shrink,
+               "rounds": int(rounds),
                "n_train": len(past), "clipped": float((np.abs(np.array(allc)) == 127).mean()),
                "spread_p10_p90": float(np.nanmedian(np.exp(np.nanpercentile(a, 90, axis=0) - np.nanpercentile(a, 10, axis=0)))),
                "median_vs_no_buyer": float(np.nanmedian(np.exp(np.nanmedian(a, axis=0)) * p.tm_value.values / p.model_value.values)),
                "example_player": p["name"].values[top], "example_no_buyer": float(p.model_value.values[top]), "example": ex}
     (OUT / "buyer_option.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1), encoding="utf-8")
-    print("buyer option:", len(clubs), "clubs | 80%% interval: x/÷ %.2f | clipped %.4f | files %.1f MB"
-          % (np.exp(q), summary["clipped"], sum(f.stat().st_size for f in out.iterdir()) / 1e6))
+    print("buyer option:", len(clubs), "clubs | 80% interval by value band: x/÷", np.exp(q).round(2),
+          "| clipped %.4f | files %.1f MB" % (summary["clipped"], sum(f.stat().st_size for f in out.iterdir()) / 1e6))
 
 
 def main():
@@ -125,15 +130,16 @@ def main():
     for d in DATES:
         past = tr[tr.transfer_date < d]
         cal = past[past.transfer_date >= d - pd.Timedelta(days=365)]
-        m = fit_lgb(past[past.transfer_date < d - pd.Timedelta(days=365)], None, FEATS_V, "log_ratio", rounds)
-        q = conformal_q((cal.log_ratio - m.predict(cal[FEATS_V])).abs(), COVERAGE)
-        m = fit_lgb(past, None, FEATS_V, "log_ratio", rounds)
+        m, shrink = fit_ratio_model(past, FEATS_V, rounds)       # with the scale-down for expensive players
+        m_cal = fit_lgb(past[past.transfer_date < d - pd.Timedelta(days=365)], None, FEATS_V, "log_ratio", rounds)
+        q = conformal_bands((cal.log_ratio - predict_ratio(m_cal, shrink, cal, FEATS_V)).abs(), cal.mv_pre, COVERAGE)
         p = pl[pl.transfer_date == d].copy()
-        p["pred_log"] = m.predict(p[FEATS_V]) + p.log_mv_pre
-        p["model_value"], p["model_lo"], p["model_hi"] = np.exp(p.pred_log), np.exp(p.pred_log - q), np.exp(p.pred_log + q)
+        p["pred_log"] = predict_ratio(m, shrink, p, FEATS_V) + p.log_mv_pre
+        qp = band_q(q, p.mv_pre)                                  # the range is narrower for expensive players
+        p["model_value"], p["model_lo"], p["model_hi"] = np.exp(p.pred_log), np.exp(p.pred_log - qp), np.exp(p.pred_log + qp)
         out.append(p)
         print(d.date(), "trained on", len(past), "transfers | players valued:", len(p),
-              "| 80%% interval: x/÷ %.2f" % np.exp(q))
+              "| 80% interval by value band: x/÷", np.exp(q).round(2), "| scale-down", shrink)
     out = pd.concat(out)
     out["club"] = out.from_club_id.map(T.names)
     cols = ["player_id", "name", "transfer_date", "club", "sell_league", "sell_country", "sub_position", "position",
