@@ -414,6 +414,31 @@ one of which is loaded when a player is opened. The inline panel of the list was
 **Files**: `docs/player.html` (new), `docs/index.html`, `docs/players/` (new, replaces
 `docs/moves/`), `src/params.py` (new), `src/value_players.py`, `src/make_method_pdf.py`.
 
+## Step 13 — Lighter player profile, in the style of Transfermarkt (4 October 2026)
+
+**Asked**: the profile page had too much information, not all of it understandable; base it on
+the Transfermarkt interface and make it lighter.
+
+**Done**: `docs/player.html` redone.
+
+- **Header**, as on a Transfermarkt profile: photo, name, club, a short list of facts (date of
+  birth and age, position, height, foot, citizenship, date joined, fee paid) and a value box on
+  the right with the model price, its range, the Transfermarkt value and the price for the
+  chosen buying club.
+- **Market value**: the five-year chart with the club of each year.
+- **Transfer history**: a table with date, from, to and fee or kind of move. Youth and reserve
+  team moves are hidden.
+- **Why this price**: only the five figures that move the price most, in plain words (for
+  example "Age: 19 years old, +18%"). The full calculation by group of parameters is folded
+  away under one line.
+- **Last 365 days**: one short table, adapted to the position: goals and assists for forwards
+  and midfielders, games without conceding and goals conceded for defenders and goalkeepers.
+
+**Removed from the page**: the list of all 54 parameters with their effect, the 17 statistic
+tiles, the bars, the yearly table and the long explanations. The underlying data is unchanged.
+
+**Files**: `docs/player.html`.
+
 ---
 
 ## Open points
