@@ -14,7 +14,8 @@ from sklearn.model_selection import GroupKFold
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-from modeling import CAT, FEATS_A, FEATS_B, FEATS_V, OUT, conformal_q, fit_lgb, metrics, params, prepare
+from modeling import (CAT, FEATS_A, FEATS_B, FEATS_V, FEATS_V_OLD, OUT, POSITIONS, conformal_q, fit_lgb, metrics,
+                      params, prepare)
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
@@ -103,6 +104,31 @@ def figures(model, te, pred):
     plt.close("all")
 
 
+def gain_share(model, feats):
+    imp = pd.Series(model.feature_importance("gain"), feats).sort_values(ascending=False)
+    return (imp / imp.sum()).rename("gain_share")
+
+
+def position_report(a, te, model_v, preds):
+    """Model V by position: error of each variant, and the weight of each parameter for each position."""
+    tr, va = a[a.split == "train"], a[a.split == "valid"]
+    feats = [f for f in FEATS_V if f != "position"]
+    sep = pd.Series(np.nan, index=te.index)             # one separate model per position, for comparison
+    for p in POSITIONS:
+        rounds = max(fit_lgb(tr[tr.position == p], va[va.position == p], feats, "log_ratio").best_iteration, 30)
+        m = fit_lgb(pd.concat([tr, va])[lambda d: d.position == p], None, feats, "log_ratio", rounds)
+        sep[te.position == p] = m.predict(te.loc[te.position == p, feats]) + te.log_mv_pre[te.position == p]
+    preds = {**preds, "one model per position": sep}
+    rows = [{"position": p, "n": int(k.sum()), **{name: np.sqrt(((pr[k] - te.log_fee[k]) ** 2).mean())
+                                                   for name, pr in preds.items()}}
+            for p, k in [("All", te.position.isin(POSITIONS))] + [(p, te.position == p) for p in POSITIONS]]
+    # share of the correction (mean absolute SHAP contribution) carried by each parameter, per position
+    sv = np.abs(model_v.predict(te[FEATS_V], pred_contrib=True)[:, :-1])
+    share = pd.DataFrame({p: sv[(te.position == p).values].mean(0) for p in POSITIONS}, index=FEATS_V)
+    share.insert(0, "All", sv.mean(0))
+    return pd.DataFrame(rows), share / share.sum()
+
+
 def cross_fit(df, feats, target, offset, rounds, k=5):
     """Out-of-fold predictions, folds grouped by player, so every gap is out-of-sample."""
     pred = pd.Series(np.nan, index=df.index)
@@ -130,8 +156,12 @@ def main():
     res.append(metrics(te.log_fee, pred_a, "LightGBM A (target: fee / value)"))
     _, _, pred_ad = lgb_predict(a, FEATS_A, "log_fee", None)
     res.append(metrics(te.log_fee, pred_ad, "LightGBM A-direct (target: fee)"))
-    _, _, pred_v = lgb_predict(a, FEATS_V, "log_ratio", "log_mv_pre")
+    model_v, _, pred_v = lgb_predict(a, FEATS_V, "log_ratio", "log_mv_pre")
     res.append(metrics(te.log_fee, pred_v, "LightGBM V (no buyer information)"))
+    model_v_old, _, pred_v_old = lgb_predict(a, FEATS_V_OLD, "log_ratio", "log_mv_pre")
+    res.append(metrics(te.log_fee, pred_v_old, "LightGBM V without position statistics (43 parameters)"))
+    d = (pred_v_old - te.log_fee) ** 2 - (pred_v - te.log_fee) ** 2
+    print("position statistics, gain in squared error: t = %.2f" % (d.mean() / (d.std() / np.sqrt(len(d)))))
     _, rounds_b, pred_b = lgb_predict(df, FEATS_B, "log_fee", None)
     teb = df[df.split == "test"]
     res.append(metrics(teb.log_fee, pred_b, "LightGBM B (no Transfermarkt values), all rows"))
@@ -141,8 +171,10 @@ def main():
     res = pd.DataFrame(res)
     seg = segments(te, pred_a, te.log_mv_pre)
     itv = intervals(a, rounds_a)
-    imp = pd.Series(model_a.feature_importance("gain"), FEATS_A).sort_values(ascending=False)
-    imp = (imp / imp.sum()).rename("gain_share")
+    imp = gain_share(model_a, FEATS_A)
+    pos_err, pos_share = position_report(a, te, model_v, {
+        "Transfermarkt": te.log_mv_pre, "43 parameters": pred_v_old, "with position statistics": pred_v})
+    print(pos_err.round(3).to_string(index=False))
     pd.set_option("display.width", 250)
     print(res.round(3).to_string(index=False), "\nrounds A/B:", rounds_a, rounds_b)
     print(seg.round(3).to_string(index=False))
@@ -161,6 +193,10 @@ def main():
     seg.to_csv(OUT / "segment_errors_test.csv", index=False)
     itv.to_csv(OUT / "intervals_test.csv", index=False)
     imp.to_csv(OUT / "feature_importance_a.csv")
+    gain_share(model_v, FEATS_V).to_csv(OUT / "feature_importance_v.csv")
+    gain_share(model_v_old, FEATS_V_OLD).to_csv(OUT / "feature_importance_v_43.csv")
+    pos_err.to_csv(OUT / "position_errors_test.csv", index=False)
+    pos_share.to_csv(OUT / "feature_share_by_position.csv")
     model_a.save_model(str(OUT / "model_a.txt"))
     cols = ["tid", "player_id", "player_name", "transfer_date", "from_club_id", "from_club_name", "to_club_id",
             "to_club_name", "transfer_fee", "mv_pre", "split", "pred_log_a", "pred_log_b", "gap_a", "gap_b"]

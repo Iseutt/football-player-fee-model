@@ -17,6 +17,9 @@ YOUTH = r"U\d\d|Youth|Yth| II$| B$| 2$| 2 |Res\.?$"
 
 PERF = ["min_365", "games_365", "goals_365", "assists_365", "min_league_365", "min_uefa_365",
         "min_seller_365", "min_365_730", "career_min", "career_games", "career_goals"]
+# raw sums behind the position-specific rates (team results while the player was on the pitch, cards, starts)
+PERF_POS = ["yellow_365", "red_365", "team_conceded_365", "team_scored_365", "clean_sheets_365", "long_games_365",
+            "full_games_365", "points_365", "career_assists"]
 
 
 def season_of(d):
@@ -98,9 +101,16 @@ def load_tables():
     t = load_transfers()
     val = read("player_valuations", parse_dates=["date"])
     app = read("appearances", parse_dates=["date"],
-               usecols=["player_id", "player_club_id", "date", "competition_id", "goals", "assists", "minutes_played"])
-    games = read("games", usecols=["season", "competition_id", "home_club_id", "away_club_id",
+               usecols=["game_id", "player_id", "player_club_id", "date", "competition_id", "goals", "assists",
+                        "minutes_played", "yellow_cards", "red_cards"])
+    games = read("games", usecols=["game_id", "season", "competition_id", "home_club_id", "away_club_id",
                                    "home_club_goals", "away_club_goals"])
+    # goals for and against the player's team in each game he played
+    app = app.merge(games[["game_id", "home_club_id", "home_club_goals", "away_club_goals"]], on="game_id", how="left")
+    home = app.player_club_id == app.home_club_id
+    app["team_gf"] = app.home_club_goals.where(home, app.away_club_goals)
+    app["team_ga"] = app.away_club_goals.where(home, app.home_club_goals)
+    app = app.drop(columns=["game_id", "home_club_id", "home_club_goals", "away_club_goals"])
     comps = read("competitions")
     cs, lg = club_season_tables(games, app, val, comps)
     names = pd.concat([t[["from_club_id", "from_club_name"]].set_axis(["id", "name"], axis=1),
@@ -178,6 +188,8 @@ def performance_features(s, T):
     days = days[m.index]
     y1, y2 = days <= 365, (days > 365) & (days <= 730)
     mins = m.minutes_played
+    share, long = mins / 90, mins >= 60       # team goals are counted in proportion to the minutes played
+    pts = pd.Series(np.select([m.team_gf > m.team_ga, m.team_gf == m.team_ga], [3, 1], 0), index=m.index)
     return pd.DataFrame({
         "tid": m.tid,
         "min_365": mins.where(y1, 0), "games_365": y1.astype(int),
@@ -186,7 +198,11 @@ def performance_features(s, T):
         "min_uefa_365": mins.where(y1 & (m.type == "international_cup"), 0),
         "min_seller_365": mins.where(y1 & (m.player_club_id == m.from_club_id), 0),
         "min_365_730": mins.where(y2, 0),
-        "career_min": mins, "career_games": 1, "career_goals": m.goals,
+        "career_min": mins, "career_games": 1, "career_goals": m.goals, "career_assists": m.assists,
+        "yellow_365": m.yellow_cards.where(y1, 0), "red_365": m.red_cards.where(y1, 0),
+        "team_conceded_365": (m.team_ga * share).where(y1, 0), "team_scored_365": (m.team_gf * share).where(y1, 0),
+        "clean_sheets_365": (y1 & long & (m.team_ga == 0)).astype(int), "long_games_365": (y1 & long).astype(int),
+        "full_games_365": (y1 & (mins >= 90)).astype(int), "points_365": pts.where(y1 & m.team_gf.notna(), 0),
     }).groupby("tid").sum().reset_index()
 
 
@@ -221,9 +237,20 @@ def build_features(s, T):
     s = s.merge(valuation_features(s, T.val), on="tid", how="left")
     s = s.merge(performance_features(s, T), on="tid", how="left")
     s["has_appearances"] = s.career_games.notna().astype(int)
-    s[PERF] = s[PERF].fillna(0)
+    s[PERF + PERF_POS] = s[PERF + PERF_POS].fillna(0)
     s["ga_p90_365"] = (s.goals_365 + s.assists_365) / s.min_365.clip(lower=450) * 90
     s["min_trend"] = s.min_365 - s.min_365_730
+    # position-specific rates: missing (not zero) for a player who did not play in the previous 365 days
+    played, per90 = s.min_365 > 0, 90 / s.min_365.clip(lower=450)
+    for name, col in [("goals_p90_365", "goals_365"), ("assists_p90_365", "assists_365"),
+                      ("conceded_p90_365", "team_conceded_365"), ("team_scored_p90_365", "team_scored_365")]:
+        s[name] = (s[col] * per90).where(played)
+    s["cards_p90_365"] = ((s.yellow_365 + 3 * s.red_365) * per90).where(played)
+    s["team_gd_p90_365"] = s.team_scored_p90_365 - s.conceded_p90_365
+    s["clean_sheet_rate_365"] = (s.clean_sheets_365 / s.long_games_365.clip(lower=5)).where(played)
+    s["points_per_game_365"] = (s.points_365 / s.games_365.clip(lower=5)).where(played)
+    s["min_per_game_365"] = (s.min_365 / s.games_365).where(played)
+    s["full_game_share_365"] = (s.full_games_365 / s.games_365).where(played)
 
     # clubs: league known for the season the date falls in, strength from the last completed season
     ref = season_of(s.transfer_date + pd.Timedelta(days=45))

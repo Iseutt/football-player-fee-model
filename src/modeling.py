@@ -14,6 +14,11 @@ PLAYER = ["age", "height_in_cm", "n_prev_transfers", "tenure_days", "log_prev_fe
           "log_seller_paid_fee"]
 PERF = ["has_appearances", "min_365", "games_365", "goals_365", "assists_365", "ga_p90_365", "min_league_365",
         "min_uefa_365", "min_seller_365", "min_365_730", "min_trend", "career_min", "career_games", "career_goals"]
+# position-specific statistics: what a goalkeeper, a defender, a midfielder or a forward is judged on
+POS = ["goals_p90_365", "assists_p90_365", "conceded_p90_365", "clean_sheet_rate_365", "team_scored_p90_365",
+       "team_gd_p90_365", "points_per_game_365", "cards_p90_365", "min_per_game_365", "full_game_share_365",
+       "career_assists"]
+POSITIONS = ["Goalkeeper", "Defender", "Midfield", "Attack"]
 CLUB = ["sell_ppg", "buy_ppg", "log_buy_spend_3y", "buy_n_3y", "log_sell_income_3y", "sell_n_3y", "same_league",
         "same_country", "sell_youth_team", "buy_youth_team", "loan_back", "late_window", "year"]
 # everything below is derived from Transfermarkt valuations (excluded from Model B)
@@ -25,9 +30,10 @@ DEAL = ["buy_league", "buy_country", "buy_ppg", "log_buy_spend_3y", "buy_n_3y", 
         "buy_youth_team", "loan_back", "late_window", "year", "log_buy_squad_value",
         "log_buy_league_avg_squad_value", "buy_club_log_ratio_3y"]
 
-FEATS_B = CAT + PLAYER + PERF + CLUB
+FEATS_B = CAT + PLAYER + PERF + POS + CLUB
 FEATS_A = FEATS_B + TM
 FEATS_V = [f for f in FEATS_A if f not in DEAL]
+FEATS_V_OLD = [f for f in FEATS_V if f not in POS]      # the 43 parameters used before the position statistics
 
 BASE_PARAMS = dict(objective="regression", learning_rate=0.03, num_leaves=31, min_data_in_leaf=40,
                    feature_fraction=0.8, bagging_fraction=0.8, bagging_freq=1, lambda_l2=1.0,

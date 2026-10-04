@@ -64,12 +64,14 @@ tbody tr.row:hover { background: var(--hover); }
   <h1>Player fee model</h1>
   <p class="lede">The fee each player would be expected to fetch if sold from his current club on 1 July 2026,
     according to a model trained on past paid transfers, next to his Transfermarkt market value.
-    Click a player to see both prices over the last five years.</p>
+    Click a player to see both prices over the last five years. Choose a buying club to see the price if that
+    club wanted to buy the player.</p>
 
   <div class="controls">
     <input id="q" type="search" placeholder="Search player or club" aria-label="Search player or club">
     <select id="pos" aria-label="Position"><option value="">All positions</option></select>
     <select id="league" aria-label="League"><option value="">All leagues</option></select>
+    <select id="buyer" aria-label="Buying club"><option value="">No buyer chosen</option></select>
   </div>
   <p class="count" id="count"></p>
   <div class="table-wrap">
@@ -90,7 +92,11 @@ tbody tr.row:hover { background: var(--hover); }
     <h2>How to read these numbers</h2>
     <ul>
       <li>The model price is an estimate of a transfer fee, not a quality rating. On real transfers it had never
-        seen (2024–2026), this version was off by a median of about 42%.</li>
+        seen (2024–2026), the version without a buyer was off by a median of about 41%.</li>
+      <li>With a buying club chosen, the price comes from the full model, which also knows the buyer: its country
+        and league, its spending, its squad value and what it usually pays compared with Transfermarkt values. It is
+        more accurate on real transfers (median error about 38%). Few rich clubs buy cheap players, so prices for
+        unlikely pairs of club and player are less reliable.</li>
       <li>The model range is an 80% interval: for four in five real transfers, the actual fee fell inside it.</li>
       <li>Each yearly price uses only transfers that happened before that date.</li>
       <li>The model learns from players who were actually sold, and it knows nothing about contract length,
@@ -101,12 +107,14 @@ tbody tr.row:hover { background: var(--hover); }
 </main>
 
 <script src="data.js"></script>
+<script src="buyers.js"></script>
 <script>
 const D = window.DATA, YEARS = D.dates.map(d => d.slice(0, 4)), LAST = YEARS.length - 1, PER = 50;
-const P = D.players.map(r => ({ id: r[0], name: r[1], club: r[2], league: r[3], country: r[4], pos: r[5], age: r[6],
+const P = D.players.map((r, i) => ({ idx: i, base: r[8][LAST], baseLo: r[9], baseHi: r[10], id: r[0], name: r[1], club: r[2], league: r[3], country: r[4], pos: r[5], age: r[6],
   tms: r[7], models: r[8], lo: r[9], hi: r[10], tm: r[7][LAST], model: r[8][LAST],
   diff: r[8][LAST] / r[7][LAST] - 1, key: (r[1] + " " + r[2]).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "") }));
-const state = { sort: "model", asc: false, page: 0, open: null };
+const state = { sort: "model", asc: false, page: 0, open: null, buyer: null };
+const B = window.BUYERS || { clubs: [] };
 const $ = id => document.getElementById(id);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const eur = k => k == null ? "–" : k === 0 ? "€0" : k >= 1000 ? "€" + (k / 1000).toFixed(k >= 10000 ? 0 : 1) + "m" : "€" + k + "k";
@@ -114,12 +122,41 @@ const pct = x => (x >= 0 ? "▲ +" : "▼ −") + Math.abs(x * 100).toFixed(0) +
 
 function fill(sel, values) { [...new Set(values)].filter(Boolean).sort().forEach(v => sel.append(new Option(v, v))); }
 fill($("pos"), P.map(p => p.pos)); fill($("league"), P.map(p => p.league));
+{ let group = null;                       // buying clubs, grouped by league
+  for (const [id, name, league] of B.clubs) {
+    if (!group || group.label !== league) { group = document.createElement("optgroup"); group.label = league; $("buyer").append(group); }
+    group.append(new Option(name, id)); } }
+
+// price of every player if the chosen club buys him (full model); without a buyer, the website model
+function applyBuyer(club) {
+  const raw = club && window.BUYER_DATA && window.BUYER_DATA[club[0]];
+  const v = raw ? Int8Array.from(atob(raw), c => c.charCodeAt(0)) : null;
+  state.buyer = v ? club : null;
+  for (const p of P) {
+    if (!v) { p.model = p.base; p.lo = p.baseLo; p.hi = p.baseHi; }
+    else if (v[p.idx] === -128) { p.model = p.lo = p.hi = null; }
+    else { const x = p.tm * Math.exp(v[p.idx] * B.step);
+      p.model = Math.round(x); p.lo = Math.round(x / B.range); p.hi = Math.round(x * B.range); }
+    p.diff = p.model == null ? null : p.model / p.tm - 1;
+  }
+  document.querySelector('th[data-k="model"]').textContent = v ? "Price if " + club[1] + " buys" : "Model price";
+  state.page = 0; render();
+}
+function chooseBuyer() {
+  const club = B.clubs.find(c => String(c[0]) === $("buyer").value);
+  if (!club || (window.BUYER_DATA && window.BUYER_DATA[club[0]])) return applyBuyer(club);
+  const s = document.createElement("script"); s.src = "buyers/" + club[0] + ".js";
+  s.onload = () => { if (String(club[0]) === $("buyer").value) applyBuyer(club); };
+  s.onerror = () => { $("buyer").value = ""; applyBuyer(null); };
+  document.head.append(s);
+}
 
 function filtered() {
   const q = $("q").value.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
   const pos = $("pos").value, lg = $("league").value, k = state.sort, s = state.asc ? 1 : -1;
   return P.filter(p => (!q || p.key.includes(q)) && (!pos || p.pos === pos) && (!lg || p.league === lg))
-    .sort((a, b) => k === "name" ? s * a.name.localeCompare(b.name) : s * (a[k] - b[k]));
+    .sort((a, b) => k === "name" ? s * a.name.localeCompare(b.name)
+      : (a[k] == null) - (b[k] == null) || s * (a[k] - b[k]));
 }
 
 function chart(p) {
@@ -135,7 +172,7 @@ function chart(p) {
     add("text", { x: m.l - 8, y: y(v) + 4, "text-anchor": "end", "font-size": 11, fill: "var(--muted)" }, eur(Math.round(v))); }
   YEARS.forEach((yr, i) => add("text", { x: x(i), y: H - 8, "text-anchor": "middle", "font-size": 11, fill: "var(--muted)" }, yr));
   const cross = add("line", { y1: m.t, y2: H - m.b, stroke: "var(--axis)", visibility: "hidden" });
-  for (const [vals, color] of [[p.tms, "var(--tm)"], [p.models, "var(--model)"]]) {
+  for (const [vals, color] of [[p.tms, "var(--tm)"], [p.models, "var(--model)"]]) {   // history: model without a buyer
     const pts = vals.map((v, i) => v == null ? null : [x(i), y(v)]).filter(Boolean);
     add("polyline", { points: pts.map(a => a.join(",")).join(" "), fill: "none", stroke: color, "stroke-width": 2,
       "stroke-linejoin": "round", "stroke-linecap": "round" });
@@ -168,6 +205,9 @@ function detail(p) {
     const d = p.models[i] != null && p.tms[i] ? pct(p.models[i] / p.tms[i] - 1) : "–";
     [yr, eur(p.models[i]), eur(p.tms[i]), d].forEach(x => r.append(el("td", "n", x))); t.append(r); });
   right.append(t, el("p", "sub", [p.pos, p.country].filter(x => x && x !== "Unknown").join(" · ")));
+  if (state.buyer) right.append(el("p", "sub", p.model == null ? "Already at " + state.buyer[1] + "."
+    : "If " + state.buyer[1] + " buys: " + eur(p.model) + " (range " + eur(p.lo) + " – " + eur(p.hi) + "). With no buyer chosen: " + eur(p.base) + "."));
+  else right.append(el("p", "sub", "Choose a buying club above to see the price for that club."));
   grid.append(left, right); td.append(grid);
   return tr;
 }
@@ -180,12 +220,13 @@ function render() {
     const tr = el("tr", "row"), first = el("td");
     first.append(el("div", "name", p.name), el("div", "sub", [p.club, p.league].filter(Boolean).join(" · ")));
     tr.append(first, el("td", null, Math.floor(p.age)), el("td", "model", eur(p.model)), el("td", null, eur(p.tm)),
-      el("td", null, pct(p.diff)), el("td", "sub", eur(p.lo) + " – " + eur(p.hi)));
+      el("td", null, p.diff == null ? "–" : pct(p.diff)), el("td", "sub", p.model == null ? "current club" : eur(p.lo) + " – " + eur(p.hi)));
     tr.addEventListener("click", () => { state.open = state.open === p.id ? null : p.id; render(); });
     body.append(tr);
     if (state.open === p.id) body.append(detail(p));
   });
-  $("count").textContent = list.length.toLocaleString("en") + " players";
+  $("count").textContent = list.length.toLocaleString("en") + " players" +
+    (state.buyer ? " · prices if " + state.buyer[1] + " buys (full model)" : " · prices with no buyer chosen");
   $("page").textContent = `Page ${state.page + 1} of ${pages}`;
   $("prev").disabled = state.page === 0; $("next").disabled = state.page >= pages - 1;
   document.querySelectorAll("thead th").forEach(th => { th.removeAttribute("aria-sort");
@@ -195,6 +236,7 @@ function render() {
 document.querySelectorAll("thead th").forEach(th => th.addEventListener("click", () => {
   const k = th.dataset.k; state.asc = state.sort === k ? !state.asc : k === "name"; state.sort = k; state.page = 0; render(); }));
 ["q", "pos", "league"].forEach(id => $(id).addEventListener("input", () => { state.page = 0; render(); }));
+$("buyer").addEventListener("change", chooseBuyer);
 $("prev").addEventListener("click", () => { state.page--; render(); });
 $("next").addEventListener("click", () => { state.page++; render(); });
 render();

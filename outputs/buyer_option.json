@@ -1,0 +1,64 @@
+{
+ "n_clubs": 508,
+ "n_players": 19435,
+ "range": 2.16491388356686,
+ "rounds": 1699,
+ "n_train": 14989,
+ "clipped": 0.0062677124839714046,
+ "spread_p10_p90": 3.7734888578415497,
+ "median_vs_no_buyer": 1.0461587160255388,
+ "example_player": "Erling Haaland",
+ "example_no_buyer": 232316798.11835924,
+ "example": [
+  [
+   "NEOM SC",
+   "Saudi Pro League",
+   304392311.1237267
+  ],
+  [
+   "Al-Ahli",
+   "Saudi Pro League",
+   292456917.8868449
+  ],
+  [
+   "Al-Qadsiah",
+   "Saudi Pro League",
+   292456917.8868449
+  ],
+  [
+   "Al-Nassr",
+   "Saudi Pro League",
+   286665882.912068
+  ],
+  [
+   "Al-Ittihad",
+   "Saudi Pro League",
+   286665882.912068
+  ],
+  [
+   "NK Varazdin",
+   "Supersport Hnl",
+   79703808.21690282
+  ],
+  [
+   "Asteras Tripoli",
+   "Super League 1",
+   81313931.94811982
+  ],
+  [
+   "FC Arges",
+   "Superliga",
+   82956582.33631627
+  ],
+  [
+   "UTA Arad",
+   "Superliga",
+   82956582.33631627
+  ],
+  [
+   "Livingston FC",
+   "Scottish Premiership",
+   89865792.8234443
+  ]
+ ]
+}
