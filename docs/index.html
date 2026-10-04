@@ -246,7 +246,7 @@ const pct = x => (x >= 0 ? "+" : "−") + Math.abs(x * 100).toFixed(0) + "%";
 // images come from the Transfermarkt image servers; anything that fails to load falls back quietly
 function crest(id, big) {
   if (!id) return "";
-  const i = el("img", "crest" + (big ? " big" : "")); i.alt = ""; i.loading = "lazy"; i.referrerPolicy = "no-referrer";
+  const i = el("img", "crest" + (big ? " big" : "")); i.alt = ""; if (!big) i.loading = "lazy"; i.referrerPolicy = "no-referrer";
   i.src = "https://tmssl.akamaized.net/images/wappen/" + (big ? "head" : "small") + "/" + id + ".png";
   i.onerror = () => i.remove();
   return i;
