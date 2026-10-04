@@ -38,7 +38,7 @@ only on transfers before that date. Open the file in a browser; no server is nee
 
 Choosing a buying club switches the prices to Model A: the fee expected if that club bought the
 player on 1 July 2026. Prices are precomputed for 508 clubs (`docs/buyers/`, one file per club,
-loaded on demand).
+loaded on demand). Club crests and player photos are loaded from the Transfermarkt image servers.
 
 ## Reproduce
 

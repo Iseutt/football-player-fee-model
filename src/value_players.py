@@ -148,6 +148,8 @@ def main():
     lg["label"] = lg.name.str.replace("-", " ").str.title()
     lg["label"] = lg.label.where(~lg.label.duplicated(keep=False), lg.label + " (" + lg.country_name.fillna("") + ")")
     leagues = lg.label.to_dict()
+    # portrait file name on the Transfermarkt image server ("" when the player has no photo)
+    img = T.players.set_index("player_id").image_url.str.extract(r"/header/\d+-(\d+\.\w+)")[0].fillna("").to_dict()
     rows = []
     for pid, r in last.iterrows():
         series = lambda c: [None if pd.isna(x) else int(round(x / 1000)) for x in wide.loc[pid, c]]  # noqa: E731
@@ -155,9 +157,11 @@ def main():
                      leagues.get(str(r.sell_league), ""), str(r.sell_country), str(r.sub_position) if
                      r.sub_position != "NA" else str(r.position), round(float(r.age), 1),
                      series("tm_value"), series("model_value"), int(k(pd.Series([r.model_lo]))[0]),
-                     int(k(pd.Series([r.model_hi]))[0])])
+                     int(k(pd.Series([r.model_hi]))[0]), None if pd.isna(r.from_club_id) else int(r.from_club_id),
+                     img.get(pid, "")])
     data = {"dates": [d.strftime("%Y-%m-%d") for d in DATES], "coverage": COVERAGE,
-            "fields": ["id", "name", "club", "league", "country", "position", "age", "tm", "model", "lo", "hi"],
+            "fields": ["id", "name", "club", "league", "country", "position", "age", "tm", "model", "lo", "hi", "club_id",
+                       "photo"],
             "players": rows}
     SITE.mkdir(exist_ok=True)
     (SITE / "data.js").write_text("window.DATA = " + json.dumps(data, ensure_ascii=False, separators=(",", ":")) + ";",

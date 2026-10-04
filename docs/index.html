@@ -3,133 +3,287 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
 <title>Player Fee Model</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root {
-  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
-  --grid: #e1e0d9; --axis: #c3c2b7; --model: #2a78d6; --tm: #eb6834; --hover: #f0efec;
+  --page: #f6f6f3; --surface: #ffffff; --raised: #fbfbfa; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --line: #e9e8e2; --axis: #d2d1c8; --hover: #f3f2ee; --model: #2a78d6; --tm: #eb6834; --accent: #2a78d6;
+  --accent-soft: #e6f0fc; --up: #0f7a55; --up-soft: #e2f5ee; --down: #b93232; --down-soft: #fbe9e9;
+  --gk: #eda100; --def: #4a3aa7; --mid: #1baf7a; --att: #e34948;
+  --shadow: 0 1px 2px rgba(11, 11, 11, .04), 0 8px 24px rgba(11, 11, 11, .05);
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
-    --grid: #2c2c2a; --axis: #383835; --model: #3987e5; --tm: #d95926; --hover: #2c2c2a;
+  :root {
+    --page: #0d0d0d; --surface: #171716; --raised: #1d1d1c; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --line: #2a2a28; --axis: #383835; --hover: #20201f; --model: #3987e5; --tm: #d95926; --accent: #3987e5;
+    --accent-soft: #14263d; --up: #4fd3a4; --up-soft: #12281f; --down: #f08a8a; --down-soft: #331a1a;
+    --gk: #c98500; --def: #9085e9; --mid: #199e70; --att: #e66767;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
   }
 }
 * { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
 body { margin: 0; background: var(--page); color: var(--ink);
-  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-main { max-width: 1100px; margin: 0 auto; padding: 32px 16px 64px; }
-h1 { font-size: 28px; line-height: 1.2; margin: 0 0 8px; }
-.lede { color: var(--ink-2); max-width: 70ch; margin: 0 0 24px; }
-.controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-.controls input, .controls select { font: inherit; color: var(--ink); background: var(--surface);
-  border: 1px solid var(--axis); border-radius: 6px; padding: 8px 10px; min-width: 0; }
-.controls input { flex: 1 1 220px; }
-.count { color: var(--ink-2); font-size: 13px; margin: 0 0 8px; }
-.table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--grid); border-radius: 8px; }
-table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
-th, td { padding: 10px 12px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--grid); }
-th:first-child, td:first-child { text-align: left; }
-thead th { font-size: 12px; font-weight: 600; color: var(--ink-2); cursor: pointer; user-select: none;
-  position: sticky; top: 0; background: var(--surface); }
-thead th[aria-sort]::after { content: " ▾"; }
-thead th[aria-sort="ascending"]::after { content: " ▴"; }
-tbody tr.row { cursor: pointer; }
-tbody tr.row:hover { background: var(--hover); }
-.name { font-weight: 600; }
-.sub { color: var(--ink-2); font-size: 13px; }
-.model { font-weight: 600; }
-.unusual { color: var(--muted); font-weight: 400; }
-.detail td { text-align: left; white-space: normal; background: var(--page); padding: 16px 12px 20px; }
-.detail-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 24px; align-items: start; }
-@media (max-width: 720px) { .detail-grid { grid-template-columns: 1fr; } }
-.legend { display: flex; gap: 16px; font-size: 13px; color: var(--ink-2); margin-bottom: 4px; }
-.legend i { display: inline-block; width: 14px; height: 2px; vertical-align: middle; margin-right: 6px; }
+  font: 15px/1.5 Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+button, input, select { font: inherit; color: inherit; }
+main { max-width: 1120px; margin: 0 auto; padding: 40px 16px 72px; }
+
+/* header */
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 14px; color: var(--ink-2); margin-bottom: 28px; }
+.brand i { width: 26px; height: 26px; border-radius: 8px; background: var(--accent); display: grid; place-items: center; }
+.brand i::before { content: ""; width: 10px; height: 10px; border-radius: 50%; border: 2px solid #fff; }
+h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.08; letter-spacing: -0.03em; font-weight: 700; margin: 0 0 12px; }
+.lede { color: var(--ink-2); max-width: 62ch; margin: 0 0 24px; font-size: 16px; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 28px; padding: 0; list-style: none; }
+.facts li { background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; font-size: 13px; color: var(--ink-2); }
+.facts b { color: var(--ink); font-weight: 600; }
+
+/* toolbar */
+.toolbar { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 12px; box-shadow: var(--shadow);
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; position: sticky; top: 8px; z-index: 5; }
+.search { position: relative; }
+.search svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.field { width: 100%; height: 44px; border: 1px solid var(--line); background: var(--raised); border-radius: 10px; padding: 0 14px; outline: none; }
+.search .field { padding-left: 42px; }
+.field:focus, .combo-btn:focus-visible, .seg button:focus-visible, .row:focus-visible, .pager button:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px; }
+.filters { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.seg { display: inline-flex; flex-wrap: wrap; background: var(--raised); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+.seg button { border: 0; background: none; padding: 7px 12px; border-radius: 7px; font-size: 13px; font-weight: 500; color: var(--ink-2); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(11, 11, 11, .12); }
+select.field { width: auto; max-width: 100%; height: 40px; font-size: 13px; cursor: pointer; }
+
+/* buying club picker */
+.combo { position: relative; }
+.combo-btn { height: 44px; min-width: 250px; width: 100%; display: flex; align-items: center; gap: 10px; padding: 0 12px; cursor: pointer;
+  border: 1px solid var(--accent); background: var(--accent-soft); border-radius: 10px; font-weight: 600; font-size: 14px; }
+.combo-btn span { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.combo-btn small { font-weight: 500; color: var(--ink-2); }
+.pop { position: absolute; right: 0; top: calc(100% + 6px); width: min(360px, calc(100vw - 32px)); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 8px; display: none; z-index: 10; }
+.combo.open .pop { display: block; }
+.pop ul { list-style: none; margin: 8px 0 0; padding: 0; max-height: 320px; overflow-y: auto; }
+.pop li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+.pop li:hover { background: var(--hover); }
+.pop li small { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.pop .none { color: var(--ink-2); }
+.pop .empty { color: var(--muted); cursor: default; }
+
+/* crests and photos */
+.crest { width: 20px; height: 20px; object-fit: contain; flex: none; }
+.crest.big { width: 30px; height: 30px; }
+.avatar { width: 44px; height: 44px; border-radius: 50%; flex: none; background: var(--hover); object-fit: cover; object-position: top;
+  display: grid; place-items: center; font-size: 13px; font-weight: 600; color: var(--ink-2); overflow: hidden; }
+.avatar.big { width: 72px; height: 72px; font-size: 20px; }
+
+/* buyer banner and count */
+.banner { display: none; align-items: center; gap: 12px; margin: 16px 0 0; padding: 12px 16px; border-radius: 14px;
+  background: var(--accent-soft); border: 1px solid var(--accent); }
+.banner.on { display: flex; }
+.banner p { margin: 0; flex: 1; font-size: 14px; }
+.banner button { border: 0; background: none; cursor: pointer; font-weight: 600; font-size: 13px; padding: 6px 10px; border-radius: 8px; white-space: nowrap; }
+.banner button:hover { background: rgba(127, 127, 127, .15); }
+.count { color: var(--ink-2); font-size: 13px; margin: 20px 4px 10px; scroll-margin-top: 140px; }
+
+/* list: Player | Position | Age | Price | Transfermarkt | Difference */
+.cols, .row { display: grid; grid-template-columns: minmax(0, 1fr) 150px 44px 150px 110px 90px; column-gap: 14px; align-items: center; }
+.cols { padding: 0 18px 8px; font-size: 12px; font-weight: 500; color: var(--muted); }
+.cols button { border: 0; background: none; padding: 4px 0; cursor: pointer; color: inherit; font-weight: inherit; font-size: inherit; text-align: right;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cols button:first-child { text-align: left; }
+.cols button[aria-sort] { color: var(--ink); }
+.cols button[aria-sort]::after { content: " ↓"; }
+.cols button[aria-sort="ascending"]::after { content: " ↑"; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; margin-bottom: 8px; overflow: hidden;
+  transition: box-shadow .15s, border-color .15s; }
+.card:hover { border-color: var(--axis); }
+.card.open { box-shadow: var(--shadow); border-color: var(--axis); }
+.row { padding: 12px 18px; cursor: pointer; text-align: right; font-variant-numeric: tabular-nums; }
+.row > *, .sub > * { grid-row: 1; }
+.who { grid-column: 1; display: flex; align-items: center; gap: 12px; text-align: left; min-width: 0; }
+.who > div { min-width: 0; }
+.sub { display: contents; }
+.pill { grid-column: 2; } .age { grid-column: 3; } .price { grid-column: 4; } .tmv { grid-column: 5; } .chip { grid-column: 6; }
+.name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meta { display: flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: 13px; white-space: nowrap; overflow: hidden; }
+.meta span { overflow: hidden; text-overflow: ellipsis; }
+.pill { justify-self: end; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--ink-2);
+  border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px 3px 8px; white-space: nowrap; max-width: 100%; overflow: hidden; }
+.pill i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.price { font-weight: 700; font-size: 16px; letter-spacing: -0.01em; }
+.price small { display: block; font-weight: 400; font-size: 12px; color: var(--muted); letter-spacing: 0; }
+.price.rough { color: var(--ink-2); font-weight: 600; }
+.tmv, .age { color: var(--ink-2); }
+.chip { justify-self: end; font-size: 13px; font-weight: 600; padding: 3px 9px; border-radius: 8px; white-space: nowrap; }
+.chip.up { color: var(--up); background: var(--up-soft); }
+.chip.down { color: var(--down); background: var(--down-soft); }
+.lab { display: none; }
+
+/* detail */
+.detail { border-top: 1px solid var(--line); background: var(--raised); padding: 20px 18px 22px; }
+.detail-head { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; }
+.detail-head h2 { margin: 0; font-size: 20px; letter-spacing: -0.02em; }
+.detail-head p { margin: 2px 0 0; color: var(--ink-2); font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.detail-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 28px; align-items: start; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--ink-2); margin-bottom: 6px; }
+.legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
 .chart { position: relative; }
 .chart svg { display: block; width: 100%; height: auto; }
-.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--axis);
-  border-radius: 6px; padding: 6px 8px; font-size: 12px; white-space: nowrap; display: none; }
-.detail table { font-size: 13px; }
-.detail th, .detail td.n { padding: 6px 8px; }
-.pager { display: flex; gap: 8px; align-items: center; margin-top: 12px; color: var(--ink-2); font-size: 13px; }
-.pager button { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--axis);
-  border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--axis); border-radius: 8px;
+  padding: 6px 9px; font-size: 12px; white-space: nowrap; display: none; box-shadow: var(--shadow); }
+.years { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.years th, .years td { padding: 7px 8px; text-align: right; border-bottom: 1px solid var(--line); }
+.years th { font-weight: 500; color: var(--muted); font-size: 12px; }
+.years th:first-child, .years td:first-child { text-align: left; }
+.buybox { margin-top: 16px; padding: 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); }
+.buybox .big { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 22px; letter-spacing: -0.02em; margin: 6px 0 2px; }
+.buybox p { margin: 0; color: var(--ink-2); font-size: 13px; }
+.buybox .warn { margin-top: 8px; }
+
+/* pager and notes */
+.pager { display: flex; gap: 12px; align-items: center; justify-content: center; margin-top: 20px; color: var(--ink-2); font-size: 13px; }
+.pager button { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 9px 16px; cursor: pointer; font-weight: 500; }
+.pager button:hover:not(:disabled) { border-color: var(--axis); }
 .pager button:disabled { opacity: .4; cursor: default; }
-.notes { color: var(--ink-2); font-size: 13px; max-width: 80ch; margin-top: 32px; }
-.notes h2 { font-size: 15px; color: var(--ink); margin: 0 0 6px; }
-.notes li { margin-bottom: 4px; }
+.empty-list { text-align: center; color: var(--ink-2); padding: 48px 16px; }
+.notes { margin-top: 48px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 4px 18px; color: var(--ink-2); font-size: 14px; }
+.notes summary { cursor: pointer; padding: 12px 0; font-weight: 600; color: var(--ink); }
+.notes ul { margin: 0 0 14px; padding-left: 18px; max-width: 80ch; }
+.notes li { margin-bottom: 6px; }
+
+@media (max-width: 860px) {
+  main { padding-top: 24px; }
+  .toolbar { grid-template-columns: 1fr; position: static; }
+  .combo-btn { min-width: 0; }
+  .pop { left: 0; right: auto; }
+  .cols { display: none; }
+  .row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 10px; padding: 14px; }
+  .row > .price { grid-column: 2; }
+  .sub { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; grid-column: 1 / -1; grid-row: 2; font-size: 13px; }
+  .lab { display: inline; color: var(--muted); }
+  .detail-grid { grid-template-columns: 1fr; }
+}
 </style>
 </head>
 <body>
 <main>
-  <h1>Player fee model</h1>
-  <p class="lede">The fee each player would be expected to fetch if sold from his current club on 1 July 2026,
-    according to a model trained on past paid transfers, next to his Transfermarkt market value.
-    Click a player to see both prices over the last five years. Choose a buying club to see the price if that
-    club wanted to buy the player.</p>
+  <div class="brand"><i></i>Player fee model</div>
+  <h1>What would a club pay<br>for this player?</h1>
+  <p class="lede">The transfer fee each player would be expected to fetch on 1 July 2026, estimated by a model trained
+    on past paid transfers. Pick a buying club to see the price for that club.</p>
+  <ul class="facts" id="facts"></ul>
 
-  <div class="controls">
-    <input id="q" type="search" placeholder="Search player or club" aria-label="Search player or club">
-    <select id="pos" aria-label="Position"><option value="">All positions</option></select>
-    <select id="league" aria-label="League"><option value="">All leagues</option></select>
-    <select id="buyer" aria-label="Buying club"><option value="">No buyer chosen</option></select>
+  <div class="toolbar">
+    <div class="search">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input class="field" id="q" type="search" placeholder="Search a player or a club" aria-label="Search a player or a club" autocomplete="off">
+    </div>
+    <div class="combo" id="combo">
+      <button class="combo-btn" id="comboBtn" type="button" aria-haspopup="listbox" aria-expanded="false"></button>
+      <div class="pop">
+        <input class="field" id="comboQ" type="search" placeholder="Search a buying club" aria-label="Search a buying club" autocomplete="off">
+        <ul id="comboList" role="listbox"></ul>
+      </div>
+    </div>
+    <div class="filters">
+      <div class="seg" id="pos" role="group" aria-label="Position"></div>
+      <select class="field" id="league" aria-label="League"><option value="">All leagues</option></select>
+    </div>
   </div>
+
+  <div class="banner" id="banner"><span id="bannerCrest"></span><p id="bannerText"></p><button id="bannerClear" type="button">Remove buyer</button></div>
   <p class="count" id="count"></p>
-  <div class="table-wrap">
-    <table>
-      <thead><tr>
-        <th data-k="name">Player</th><th data-k="age">Age</th><th data-k="model">Model price</th>
-        <th data-k="tm">Transfermarkt price</th><th data-k="diff">Model vs Transfermarkt</th>
-        <th data-k="lo">Model range</th>
-      </tr></thead>
-      <tbody id="rows"></tbody>
-    </table>
+  <div class="cols" id="cols">
+    <button data-k="name">Player</button><button data-k="group">Position</button><button data-k="age">Age</button>
+    <button data-k="model" id="colPrice">Model price</button><button data-k="tm">Transfermarkt</button><button data-k="diff">Difference</button>
   </div>
+  <div id="rows"></div>
   <div class="pager">
-    <button id="prev">Previous</button><span id="page"></span><button id="next">Next</button>
+    <button id="prev" type="button">Previous</button><span id="page"></span><button id="next" type="button">Next</button>
   </div>
 
-  <section class="notes">
-    <h2>How to read these numbers</h2>
+  <details class="notes">
+    <summary>How to read these numbers</summary>
     <ul>
       <li>The model price is an estimate of a transfer fee, not a quality rating. On real transfers it had never
         seen (2024–2026), the version without a buyer was off by a median of about 41%.</li>
       <li>With a buying club chosen, the price comes from the full model, which also knows the buyer: its country
         and league, its spending, its squad value and what it usually pays compared with Transfermarkt values. It is
-        more accurate on real transfers (median error about 38%). A price marked * is an unusual deal: the player's
-        Transfermarkt value is below the cheapest 5% or above the most expensive of the players that clubs of that
-        league bought over the last five years, so the model has little to go on.</li>
-      <li>The model range is an 80% interval: for four in five real transfers, the actual fee fell inside it.</li>
+        more accurate on real transfers (median error about 38%).</li>
+      <li>A price shown as a rough guess is an unusual deal: the player's Transfermarkt value is below the cheapest 5%
+        or above the most expensive of the players that clubs of that league bought over the last five years, so the
+        model has little to go on.</li>
+      <li>The range under each price is an 80% interval: for four in five real transfers, the actual fee fell inside it.</li>
       <li>Each yearly price uses only transfers that happened before that date.</li>
       <li>The model learns from players who were actually sold, and it knows nothing about contract length,
         so prices for players who are not for sale are less reliable.</li>
-      <li>Data: Transfermarkt, via the open transfermarkt-datasets project. Last update 6 July 2026.</li>
+      <li>Data, club crests and player photos: Transfermarkt, via the open transfermarkt-datasets project. Last update 6 July 2026.</li>
     </ul>
-  </section>
+  </details>
 </main>
 
-<script src="data.js?v=202610041518"></script>
-<script src="buyers.js?v=202610041518"></script>
+<script src="data.js?v=202610041530"></script>
+<script src="buyers.js?v=202610041530"></script>
 <script>
-const D = window.DATA, YEARS = D.dates.map(d => d.slice(0, 4)), LAST = YEARS.length - 1, PER = 50;
-const P = D.players.map((r, i) => ({ idx: i, base: r[8][LAST], baseLo: r[9], baseHi: r[10], id: r[0], name: r[1], club: r[2], league: r[3], country: r[4], pos: r[5], age: r[6],
-  tms: r[7], models: r[8], lo: r[9], hi: r[10], tm: r[7][LAST], model: r[8][LAST],
-  diff: r[8][LAST] / r[7][LAST] - 1, key: (r[1] + " " + r[2]).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "") }));
-const state = { sort: "model", asc: false, page: 0, open: null, buyer: null };
+const D = window.DATA, YEARS = D.dates.map(d => d.slice(0, 4)), LAST = YEARS.length - 1, PER = 40;
 const B = window.BUYERS || { clubs: [] };
+const GROUPS = ["Goalkeeper", "Defender", "Midfield", "Attack"], GROUP_VAR = ["--gk", "--def", "--mid", "--att"];
+const groupOf = pos => pos === "Goalkeeper" ? 0 : /Midfield/.test(pos) ? 2 : /Back|Defen/.test(pos) ? 1 : 3;
+const fold = s => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+const P = D.players.map((r, i) => ({ idx: i, id: r[0], name: r[1], club: r[2], league: r[3], country: r[4], pos: r[5], age: r[6],
+  tms: r[7], models: r[8], tm: r[7][LAST], base: r[8][LAST], baseLo: r[9], baseHi: r[10], clubId: r[11], photo: r[12],
+  group: groupOf(r[5]), key: fold(r[1] + " " + r[2]) }));
+const state = { sort: "model", asc: false, page: 0, open: null, buyer: null, group: "" };
 const $ = id => document.getElementById(id);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const eur = k => k == null ? "–" : k === 0 ? "€0" : k >= 1000 ? "€" + (k / 1000).toFixed(k >= 10000 ? 0 : 1) + "m" : "€" + k + "k";
-const pct = x => (x >= 0 ? "▲ +" : "▼ −") + Math.abs(x * 100).toFixed(0) + "%";
+const pct = x => (x >= 0 ? "+" : "−") + Math.abs(x * 100).toFixed(0) + "%";
 
-function fill(sel, values) { [...new Set(values)].filter(Boolean).sort().forEach(v => sel.append(new Option(v, v))); }
-fill($("pos"), P.map(p => p.pos)); fill($("league"), P.map(p => p.league));
-{ let group = null;                       // buying clubs, grouped by league
-  for (const [id, name, league] of B.clubs) {
-    if (!group || group.label !== league) { group = document.createElement("optgroup"); group.label = league; $("buyer").append(group); }
-    group.append(new Option(name, id)); } }
+// images come from the Transfermarkt image servers; anything that fails to load falls back quietly
+function crest(id, big) {
+  if (!id) return "";
+  const i = el("img", "crest" + (big ? " big" : "")); i.alt = ""; i.loading = "lazy"; i.referrerPolicy = "no-referrer";
+  i.src = "https://tmssl.akamaized.net/images/wappen/" + (big ? "head" : "small") + "/" + id + ".png";
+  i.onerror = () => i.remove();
+  return i;
+}
+function avatar(p, big) {
+  const initials = el("span", "avatar" + (big ? " big" : ""), p.name.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase());
+  if (!p.photo) return initials;
+  const i = el("img", "avatar" + (big ? " big" : "")); i.alt = ""; i.loading = "lazy"; i.referrerPolicy = "no-referrer";
+  i.src = "https://img.a.transfermarkt.technology/portrait/" + (big ? "header" : "medium") + "/" + p.id + "-" + p.photo;
+  i.onerror = () => i.replaceWith(initials);
+  return i;
+}
+function chip(x) {
+  if (x == null) return el("span", "chip", "–");
+  const c = el("span", "chip " + (x >= 0 ? "up" : "down"), (x >= 0 ? "▲ " : "▼ ") + pct(x));
+  c.title = "Price compared with the Transfermarkt value";
+  return c;
+}
 
-// price of every player if the chosen club buys him (full model); without a buyer, the website model
+// ---- filters
+$("facts").append(...[[P.length.toLocaleString("en"), "players"], [B.clubs.length, "buying clubs"],
+  [new Set(P.map(p => p.league).filter(Boolean)).size, "leagues"], ["1 July 2026", "valuation date"]].map(([b, t]) => {
+    const li = el("li"); li.append(el("b", null, b), " " + t); return li; }));
+[...new Set(P.map(p => p.league))].filter(Boolean).sort().forEach(v => $("league").append(new Option(v, v)));
+["All", "Goalkeepers", "Defenders", "Midfielders", "Forwards"].forEach((g, i) => { const b = el("button", null, g); b.type = "button";
+  b.dataset.g = i ? i - 1 : ""; b.setAttribute("aria-pressed", i === 0); $("pos").append(b); });
+$("pos").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return;
+  state.group = b.dataset.g; [...$("pos").children].forEach(x => x.setAttribute("aria-pressed", x === b)); state.page = 0; render(); });
+
+function filtered() {
+  const q = fold($("q").value).trim(), lg = $("league").value, g = state.group, k = state.sort, s = state.asc ? 1 : -1;
+  return P.filter(p => (!q || p.key.includes(q)) && (g === "" || p.group === +g) && (!lg || p.league === lg))
+    .sort((a, b) => k === "name" ? s * a.name.localeCompare(b.name)
+      : (a[k] == null) - (b[k] == null) || s * (a[k] - b[k]) || b.tm - a.tm);
+}
+
+// ---- buying club: price of every player if the chosen club buys him (full model); otherwise the model without a buyer
 function applyBuyer(club) {
   const raw = club && window.BUYER_DATA && window.BUYER_DATA[club[0]];
   let v = raw ? Int8Array.from(atob(raw), c => c.charCodeAt(0)) : null;
@@ -144,36 +298,53 @@ function applyBuyer(club) {
       p.model = Math.round(x); p.lo = Math.round(x / B.range); p.hi = Math.round(x * B.range); }
     p.diff = p.model == null ? null : p.model / p.tm - 1;
   }
-  document.querySelector('th[data-k="model"]').textContent = v ? "Price if " + club[1] + " buys" : "Model price";
-  state.page = 0; render();
+  $("colPrice").textContent = v ? "Price for " + club[1] : "Model price";
+  $("banner").classList.toggle("on", !!v);
+  if (v) { $("bannerCrest").replaceChildren(crest(club[0], true));
+    $("bannerText").replaceChildren("Prices if ", el("b", null, club[1]), " buys the player · " + club[2]); }
+  comboLabel(); state.page = 0; render();
 }
-function chooseBuyer() {
-  const club = B.clubs.find(c => String(c[0]) === $("buyer").value);
+function chooseBuyer(club) {
+  closeCombo();
   if (!club || (window.BUYER_DATA && window.BUYER_DATA[club[0]])) return applyBuyer(club);
+  $("comboBtn").replaceChildren(el("span", null, "Loading " + club[1] + "…"));
   const s = document.createElement("script"); s.src = "buyers/" + club[0] + ".js?v=" + B.version;
-  s.onload = () => { if (String(club[0]) === $("buyer").value) applyBuyer(club); };
-  s.onerror = () => { $("buyer").value = ""; applyBuyer(null); };
+  s.onload = () => applyBuyer(club);
+  s.onerror = () => applyBuyer(null);
   document.head.append(s);
 }
-
-function filtered() {
-  const q = $("q").value.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
-  const pos = $("pos").value, lg = $("league").value, k = state.sort, s = state.asc ? 1 : -1;
-  return P.filter(p => (!q || p.key.includes(q)) && (!pos || p.pos === pos) && (!lg || p.league === lg))
-    .sort((a, b) => k === "name" ? s * a.name.localeCompare(b.name)
-      : (a[k] == null) - (b[k] == null) || s * (a[k] - b[k]));
+function comboLabel() {
+  const b = state.buyer;
+  $("comboBtn").replaceChildren(b ? crest(b[0]) : "", el("span", null, b ? b[1] : "Choose a buying club"), el("small", null, b ? "Change" : "▾"));
 }
+function comboList() {
+  const q = fold($("comboQ").value).trim(), list = $("comboList"); list.replaceChildren();
+  if (state.buyer && !q) { const li = el("li", "none", "No buying club"); li.onclick = () => chooseBuyer(null); list.append(li); }
+  const hits = B.clubs.filter(c => !q || fold(c[1] + " " + c[2]).includes(q)).slice(0, 80);
+  hits.forEach(c => { const li = el("li"); li.setAttribute("role", "option");
+    li.append(crest(c[0]), el("span", null, c[1]), el("small", null, c[2])); li.onclick = () => chooseBuyer(c); list.append(li); });
+  if (!hits.length) list.append(el("li", "empty", "No club found"));
+  list.firstHit = hits[0];
+}
+function openCombo() { $("combo").classList.add("open"); $("comboBtn").setAttribute("aria-expanded", "true"); $("comboQ").value = ""; comboList(); $("comboQ").focus(); }
+function closeCombo() { $("combo").classList.remove("open"); $("comboBtn").setAttribute("aria-expanded", "false"); }
+$("comboBtn").addEventListener("click", () => $("combo").classList.contains("open") ? closeCombo() : openCombo());
+$("comboQ").addEventListener("input", comboList);
+$("comboQ").addEventListener("keydown", e => { if (e.key === "Enter" && $("comboList").firstHit) chooseBuyer($("comboList").firstHit); if (e.key === "Escape") closeCombo(); });
+document.addEventListener("click", e => { if (!$("combo").contains(e.target)) closeCombo(); });
+$("bannerClear").addEventListener("click", () => chooseBuyer(null));
 
+// ---- player detail
 function chart(p) {
   const W = 520, H = 240, m = { l: 48, r: 16, t: 12, b: 28 }, ns = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(ns, "svg"); svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-  svg.setAttribute("role", "img"); svg.setAttribute("aria-label", "Model price and Transfermarkt price by year");
+  svg.setAttribute("role", "img"); svg.setAttribute("aria-label", "Model price and Transfermarkt value by year");
   const add = (tag, attrs, text) => { const e = document.createElementNS(ns, tag);
     for (const a in attrs) e.setAttribute(a, attrs[a]); if (text != null) e.textContent = text; svg.append(e); return e; };
   const max = Math.max(...p.models.filter(v => v != null), ...p.tms.filter(v => v != null)) * 1.1 || 1;
   const x = i => m.l + i * (W - m.l - m.r) / LAST, y = v => H - m.b - v / max * (H - m.t - m.b);
   for (let i = 0; i <= 4; i++) { const v = max * i / 4;
-    add("line", { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), stroke: i ? "var(--grid)" : "var(--axis)" });
+    add("line", { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), stroke: i ? "var(--line)" : "var(--axis)" });
     add("text", { x: m.l - 8, y: y(v) + 4, "text-anchor": "end", "font-size": 11, fill: "var(--muted)" }, eur(Math.round(v))); }
   YEARS.forEach((yr, i) => add("text", { x: x(i), y: H - 8, "text-anchor": "middle", "font-size": 11, fill: "var(--muted)" }, yr));
   const cross = add("line", { y1: m.t, y2: H - m.b, stroke: "var(--axis)", visibility: "hidden" });
@@ -181,7 +352,7 @@ function chart(p) {
     const pts = vals.map((v, i) => v == null ? null : [x(i), y(v)]).filter(Boolean);
     add("polyline", { points: pts.map(a => a.join(",")).join(" "), fill: "none", stroke: color, "stroke-width": 2,
       "stroke-linejoin": "round", "stroke-linecap": "round" });
-    pts.forEach(a => add("circle", { cx: a[0], cy: a[1], r: 4, fill: color, stroke: "var(--page)", "stroke-width": 2 }));
+    pts.forEach(a => add("circle", { cx: a[0], cy: a[1], r: 4, fill: color, stroke: "var(--raised)", "stroke-width": 2 }));
   }
   const wrap = el("div", "chart"), tip = el("div", "tip"); wrap.append(svg, tip);
   svg.addEventListener("pointermove", e => {
@@ -198,54 +369,72 @@ function chart(p) {
 }
 
 function detail(p) {
-  const tr = el("tr", "detail"), td = el("td"); td.colSpan = 6; tr.append(td);
-  const grid = el("div", "detail-grid"), left = el("div"), right = el("div");
-  const legend = el("div", "legend");
-  for (const [label, c] of [["Model price", "var(--model)"], ["Transfermarkt price", "var(--tm)"]]) {
+  const box = el("div", "detail"), head = el("div", "detail-head"), txt = el("div"), sub = el("p");
+  sub.append(crest(p.clubId), ([p.club, p.league].filter(Boolean).join(" · ") || "No club") + " · " + p.pos + " · " + Math.floor(p.age) + " years");
+  txt.append(el("h2", null, p.name), sub); head.append(avatar(p, true), txt);
+  const grid = el("div", "detail-grid"), left = el("div"), right = el("div"), legend = el("div", "legend");
+  for (const [label, c] of [["Model price, no buyer", "var(--model)"], ["Transfermarkt value", "var(--tm)"]]) {
     const s = el("span"), i = el("i"); i.style.background = c; s.append(i, label); legend.append(s); }
   left.append(legend, chart(p));
-  const t = el("table"), h = el("tr"); ["1 July", "Model", "Transfermarkt", "Difference"].forEach(x => h.append(el("th", null, x)));
+  const t = el("table", "years"), h = el("tr"); ["1 July", "Model", "Transfermarkt", "Difference"].forEach(x => h.append(el("th", null, x)));
   t.append(h);
   YEARS.forEach((yr, i) => { const r = el("tr");
     const d = p.models[i] != null && p.tms[i] ? pct(p.models[i] / p.tms[i] - 1) : "–";
-    [yr, eur(p.models[i]), eur(p.tms[i]), d].forEach(x => r.append(el("td", "n", x))); t.append(r); });
-  right.append(t, el("p", "sub", [p.pos, p.country].filter(x => x && x !== "Unknown").join(" · ")));
-  if (state.buyer) right.append(el("p", "sub", p.model == null ? "Already at " + state.buyer[1] + "."
-    : "If " + state.buyer[1] + " buys: " + eur(p.model) + " (range " + eur(p.lo) + " – " + eur(p.hi) + "). With no buyer chosen: " + eur(p.base) + "."
-      + (p.unusual ? " Unusual deal: clubs in " + state.buyer[2] + " bought players valued between " + eur(state.buyer[3]) + " and " + eur(state.buyer[4]) + " by Transfermarkt over the last five years, so this price is a rough guess." : "")));
-  else right.append(el("p", "sub", "Choose a buying club above to see the price for that club."));
-  grid.append(left, right); td.append(grid);
-  return tr;
+    [yr, eur(p.models[i]), eur(p.tms[i]), d].forEach(x => r.append(el("td", null, x))); t.append(r); });
+  right.append(t);
+  const buy = el("div", "buybox"), b = state.buyer;
+  if (!b) buy.append(el("p", null, "Choose a buying club at the top to see what that club would be expected to pay."));
+  else if (p.model == null) buy.append(el("p", null, p.name + " already plays for " + b[1] + "."));
+  else { const big = el("div", "big"); big.append(crest(b[0], true), eur(p.model));
+    buy.append(el("p", null, "If " + b[1] + " buys"), big,
+      el("p", null, "Likely between " + eur(p.lo) + " and " + eur(p.hi) + ". With no buyer chosen: " + eur(p.base) + "."));
+    if (p.unusual) buy.append(el("p", "warn", "Rough guess: over the last five years, clubs in " + b[2] + " bought players valued between "
+      + eur(b[3]) + " and " + eur(b[4]) + " by Transfermarkt. This player is outside that range.")); }
+  right.append(buy); grid.append(left, right); box.append(head, grid);
+  return box;
 }
 
+// ---- list
 function render() {
   const list = filtered(), pages = Math.max(1, Math.ceil(list.length / PER));
   state.page = Math.min(state.page, pages - 1);
   const body = $("rows"); body.replaceChildren();
   list.slice(state.page * PER, (state.page + 1) * PER).forEach(p => {
-    const tr = el("tr", "row"), first = el("td");
-    first.append(el("div", "name", p.name), el("div", "sub", [p.club, p.league].filter(Boolean).join(" · ")));
-    tr.append(first, el("td", null, Math.floor(p.age)), el("td", p.unusual ? "model unusual" : "model", eur(p.model) + (p.unusual ? " *" : "")), el("td", null, eur(p.tm)),
-      el("td", null, p.diff == null ? "–" : pct(p.diff)), el("td", "sub", p.model == null ? "current club" : eur(p.lo) + " – " + eur(p.hi)));
-    tr.addEventListener("click", () => { state.open = state.open === p.id ? null : p.id; render(); });
-    body.append(tr);
-    if (state.open === p.id) body.append(detail(p));
+    const card = el("div", "card" + (state.open === p.id ? " open" : "")), row = el("div", "row");
+    row.tabIndex = 0; row.setAttribute("role", "button"); row.setAttribute("aria-expanded", state.open === p.id);
+    const who = el("div", "who"), names = el("div"), meta = el("div", "meta");
+    meta.append(crest(p.clubId), el("span", null, [p.club, p.league].filter(Boolean).join(" · ") || "No club"));
+    names.append(el("div", "name", p.name), meta); who.append(avatar(p), names);
+    const pill = el("span", "pill"), dot = el("i"); dot.style.background = `var(${GROUP_VAR[p.group]})`; pill.append(dot, p.pos); pill.title = GROUPS[p.group];
+    const price = el("div", "price" + (p.unusual ? " rough" : ""), p.model == null ? "–" : eur(p.model));
+    price.append(el("small", null, p.model == null ? "current club" : p.unusual ? "rough guess" : eur(p.lo) + " – " + eur(p.hi)));
+    const age = el("span", "age"), tmv = el("span", "tmv"), sub = el("div", "sub");
+    age.append(el("span", "lab", "Age "), Math.floor(p.age)); tmv.append(el("span", "lab", "Transfermarkt "), eur(p.tm));
+    sub.append(pill, age, tmv, chip(p.diff));           // one line under the name on small screens, separate columns on wide ones
+    row.append(who, price, sub);
+    const toggle = () => { state.open = state.open === p.id ? null : p.id; render(); };
+    row.addEventListener("click", toggle);
+    row.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+    card.append(row);
+    if (state.open === p.id) card.append(detail(p));
+    body.append(card);
   });
-  $("count").textContent = list.length.toLocaleString("en") + " players" +
-    (state.buyer ? " · prices if " + state.buyer[1] + " buys (full model) · * unusual deal for this club, rough guess" : " · prices with no buyer chosen");
-  $("page").textContent = `Page ${state.page + 1} of ${pages}`;
+  if (!list.length) body.append(el("p", "empty-list", "No player matches. Try another name, position or league."));
+  $("count").textContent = list.length.toLocaleString("en") + (list.length === 1 ? " player" : " players")
+    + (state.buyer ? " · full model, with " + state.buyer[1] + " as the buyer" : " · model without a buyer");
+  $("page").textContent = `Page ${state.page + 1} of ${pages.toLocaleString("en")}`;
   $("prev").disabled = state.page === 0; $("next").disabled = state.page >= pages - 1;
-  document.querySelectorAll("thead th").forEach(th => { th.removeAttribute("aria-sort");
-    if (th.dataset.k === state.sort) th.setAttribute("aria-sort", state.asc ? "ascending" : "descending"); });
+  document.querySelectorAll("#cols button").forEach(b => { b.removeAttribute("aria-sort");
+    if (b.dataset.k === state.sort) b.setAttribute("aria-sort", state.asc ? "ascending" : "descending"); });
 }
 
-document.querySelectorAll("thead th").forEach(th => th.addEventListener("click", () => {
-  const k = th.dataset.k; state.asc = state.sort === k ? !state.asc : k === "name"; state.sort = k; state.page = 0; render(); }));
-["q", "pos", "league"].forEach(id => $(id).addEventListener("input", () => { state.page = 0; render(); }));
-$("buyer").addEventListener("change", chooseBuyer);
-$("prev").addEventListener("click", () => { state.page--; render(); });
-$("next").addEventListener("click", () => { state.page++; render(); });
-render();
+document.querySelectorAll("#cols button").forEach(b => b.addEventListener("click", () => {
+  const k = b.dataset.k; state.asc = state.sort === k ? !state.asc : k === "name" || k === "group"; state.sort = k; state.page = 0; render(); }));
+["q", "league"].forEach(id => $(id).addEventListener("input", () => { state.page = 0; render(); }));
+const turn = d => { state.page += d; render(); $("count").scrollIntoView({ block: "start" }); };
+$("prev").addEventListener("click", () => turn(-1));
+$("next").addEventListener("click", () => turn(1));
+applyBuyer(null);
 </script>
 </body>
 </html>
