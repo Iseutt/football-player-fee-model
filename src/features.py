@@ -15,6 +15,7 @@ MV_LAG_DAYS = 30          # a valuation must be at least this old to be used
 TOP_N_SQUAD = 18
 YOUTH = r"U\d\d|Youth|Yth| II$| B$| 2$| 2 |Res\.?$"
 NO_CLUB = ["Without Club", "Unknown", "Retired", "Career break", "Ban"]
+MANUAL = Path("data/manual_transfers.csv")
 
 PERF = ["min_365", "games_365", "goals_365", "assists_365", "min_league_365", "min_uefa_365",
         "min_seller_365", "min_365_730", "career_min", "career_games", "career_goals"]
@@ -50,6 +51,15 @@ def load_transfers():
     # next move starts again from the seller: the player never really left
     chain_break = (nxt["from_club_id"] == t.from_club_id) & (nxt["to_club_id"] != t.to_club_id)
     t["is_loan_fee"] = loan_fee | chain_break
+
+    # moves made after the snapshot, entered by hand: they tell where a player is today, and are never used as
+    # training transfers
+    t["manual"] = False
+    if MANUAL.exists():
+        m = pd.read_csv(MANUAL, parse_dates=["transfer_date"]).assign(manual=True, loan_back=False, is_loan_fee=False)
+        t = pd.concat([t, m[[c for c in t.columns if c in m.columns]]], ignore_index=True)
+        t = t.sort_values(["player_id", "transfer_date"], kind="stable").reset_index(drop=True)
+        g = t.groupby("player_id")
 
     # running record of the player, including the current row (looked up later with a strict "before")
     paid = t.transfer_fee.where(t.transfer_fee > 0)
@@ -145,16 +155,17 @@ def history_features(s, T):
     """Past transfer record of the player. Also fills a missing current club."""
     h = T.transfers[["player_id", "transfer_date", "to_club_id", "transfer_fee", "cum_n", "cum_last_paid",
                      "cum_max_paid"]].rename(columns={"transfer_date": "h_date", "to_club_id": "h_to",
-                                                      "transfer_fee": "h_fee"}).sort_values("h_date")
+                                                      "transfer_fee": "h_fee"}).sort_values("h_date", kind="stable")
 
     def last_move(rows, moves, days):
         """Last move of each player before the date (plus `days`), aligned on the rows."""
-        q = rows[["tid", "player_id", "transfer_date"]].assign(lookup=rows.transfer_date + pd.Timedelta(days=days))
+        asof = rows.club_asof if days and "club_asof" in rows else rows.transfer_date
+        q = rows[["tid", "player_id", "transfer_date"]].assign(lookup=asof + pd.Timedelta(days=days))
         return pd.merge_asof(q.sort_values("lookup"), moves, left_on="lookup", right_on="h_date", by="player_id",
                              allow_exact_matches=False).set_index("tid").reindex(rows.tid).set_axis(rows.index)
 
-    # a transfer: what was known strictly before it. A valuation: the player's club on that day, so a move dated
-    # the same day counts, and the club is the last real one (not "Without Club", "Retired", ...)
+    # a transfer: what was known strictly before it. A valuation: the player's club on that day (or on `club_asof`
+    # if given), so a move dated the same day counts, and the club is the last real one (not "Without Club", ...)
     val = s.from_club_id.isna()
     m = last_move(s, h, 0)
     s["status"] = ""
@@ -171,7 +182,7 @@ def history_features(s, T):
     s["n_prev_transfers"] = m.cum_n.fillna(0)
     s["prev_fee_paid"], s["max_prev_fee"] = m.cum_last_paid, m.cum_max_paid
     same = m.h_to == s.from_club_id
-    s["tenure_days"] = (s.transfer_date - m.h_date).dt.days.where(same)
+    s["tenure_days"] = (s.transfer_date - m.h_date).dt.days.clip(lower=0).where(same)
     s["seller_paid_fee"] = m.h_fee.where(same & (m.h_fee > 0))
     return s
 

@@ -293,7 +293,58 @@ Jacquet at Rennes instead of Liverpool).
 **Files**: `src/features.py` (club on the valuation date), `src/value_players.py`,
 `docs/index.html`, `docs/data.js`, `docs/buyers.js`, `docs/buyers/`.
 
-**Open**: refresh the data to a later snapshot or not.
+**Open then**: refresh the data to a later snapshot or not (answered in Step 10: no newer snapshot exists).
+
+## Step 10 — Clubs after the data snapshot, league picker (4 October 2026)
+
+**Asked**: check every player again, free agents included, because a free agent may already
+have signed elsewhere (Konaté with Real Madrid); give the league filter the same look as the
+buying-club picker.
+
+**What the check found**:
+
+- The source has no newer data. Its transfers file, downloaded again on 4 October 2026, is
+  identical to the local one and stops on 6 July 2026. So every move made after that date is
+  missing: the whole summer 2026 window after 6 July, including Konaté to Real Madrid and
+  Balerdi to Roma (a loan, 30 August 2026).
+- None of the 858 free agents has a later move recorded in the data.
+
+**Done**:
+
+- **Manual updates file** `data/manual_transfers.csv`: moves made after the snapshot, each with
+  its date, fee, kind (free, loan, permanent) and source. They only tell where a player is
+  today. They are never used as training transfers, and the training table is unchanged apart
+  from one row (see below).
+- **24 moves entered**, each checked on the web:
+  - free agents: Konaté and Bernardo Silva to Real Madrid, Stones to Inter, Salah to
+    Trabzonspor, Lewandowski to Chicago Fire, Goretzka to Aston Villa;
+  - Balerdi, on loan from Marseille to Roma;
+  - Cucurella to Real Madrid;
+  - the summer's biggest transfers that two published top-20 lists agree on: Enzo Fernández,
+    Anderson, Bouaddi and Ndiaye to Manchester City; Barcola to Liverpool; Rogers to Chelsea;
+    Diomande to Real Madrid; Tonali, Mateus Fernandes and Savinho to Tottenham; Bruno Guimarães
+    to Arsenal; Baleba to Manchester United; Gonçalo Ramos to AC Milan; Martinelli and
+    Summerville to Al-Hilal; Reijnders to Al-Qadsiah.
+- **Left out because confirmed by one source only**: Vlahović to Beşiktaş, Brandt to Ajax, Rodri
+  to Barcelona, Jackson to Aston Villa, van Hecke to Tottenham, Lacroix to Chelsea.
+- **The latest list now shows today's club**: for 1 July 2026, moves recorded after that date
+  count for the player's club, and his price is computed as if he were sold from that club.
+  Earlier years are unchanged.
+- Fees given in pounds were converted at 1.155 (the rate implied by the Gordon deal). Most
+  dates are approximate (end of the window). Barcola's fee differs between the two lists.
+- **League filter**: same picker as the buying club, one row per league with the flag of its
+  country, the eight biggest first, then by country in alphabetical order, with the number of
+  players and a search box.
+- **One training row changed**: transfers on the same day for the same player are now kept in
+  file order (needed for the manual file). One transfer out of 15,936 (Fer López, 1 July 2025)
+  gets a different "time at the club". All models and both PDFs were rerun on this table.
+
+**Limit to keep in mind**: outside these 24 players, any move made after 6 July 2026 is still
+missing, and there are hundreds. A complete fix needs a source that covers the full summer 2026
+window. New rows can be added to `data/manual_transfers.csv` at any time.
+
+**Files**: `data/manual_transfers.csv` (new), `src/features.py`, `src/build_dataset.py`,
+`src/value_players.py`, `docs/index.html`, site data.
 
 ---
 

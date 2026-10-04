@@ -66,6 +66,9 @@ select.field { width: auto; max-width: 100%; height: 40px; font-size: 13px; curs
 .pop { position: absolute; right: 0; top: calc(100% + 6px); width: min(440px, calc(100vw - 32px)); background: var(--surface);
   border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 8px; display: none; z-index: 10; }
 .combo.open .pop { display: block; }
+.combo.plain .combo-btn { height: 40px; min-width: 220px; border-color: var(--line); background: var(--raised); font-weight: 500; font-size: 13px; }
+.combo.plain .pop { left: 0; right: auto; width: min(380px, calc(100vw - 32px)); }
+.pop li[aria-selected="true"] { background: var(--accent-soft); }
 .pop ul { list-style: none; margin: 8px 0 0; padding: 0; max-height: min(460px, 60vh); overflow-y: auto; }
 .pop .head { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 12px 10px 4px; cursor: default; }
 .pop .head:hover { background: none; }
@@ -207,7 +210,13 @@ select.field { width: auto; max-width: 100%; height: 40px; font-size: 13px; curs
     </div>
     <div class="filters">
       <div class="seg" id="pos" role="group" aria-label="Position"></div>
-      <select class="field" id="league" aria-label="League"><option value="">All leagues</option></select>
+      <div class="combo plain" id="lgCombo">
+        <button class="combo-btn" id="lgBtn" type="button" aria-haspopup="listbox" aria-expanded="false"></button>
+        <div class="pop">
+          <input class="field" id="lgQ" type="search" placeholder="Search a league or a country" aria-label="Search a league or a country" autocomplete="off">
+          <ul id="lgList" role="listbox"></ul>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -239,13 +248,16 @@ select.field { width: auto; max-width: 100%; height: 40px; font-size: 13px; curs
         on that date is shown at the club he was loaned to; a loan that ended on 30 June counts as ended.</li>
       <li>The model learns from players who were actually sold, and it knows nothing about contract length,
         so prices for players who are not for sale are less reliable.</li>
-      <li>Data, club crests and player photos: Transfermarkt, via the open transfermarkt-datasets project. Last update 6 July 2026.</li>
+      <li>Data, club crests and player photos: Transfermarkt, via the open transfermarkt-datasets project. The data
+        stops on 6 July 2026. A short list of major later moves (the biggest transfers of the summer and the main
+        free agents) was added by hand so that those players appear at their new club; other moves made after
+        6 July 2026 are missing.</li>
     </ul>
   </details>
 </main>
 
-<script src="data.js?v=202610041650"></script>
-<script src="buyers.js?v=202610041650"></script>
+<script src="data.js?v=202610041706"></script>
+<script src="buyers.js?v=202610041706"></script>
 <script>
 const D = window.DATA, YEARS = D.dates.map(d => d.slice(0, 4)), LAST = YEARS.length - 1, PER = 40;
 const B = window.BUYERS || { clubs: [] };
@@ -259,7 +271,7 @@ const P = D.players.map((r, i) => ({ idx: i, id: r[0], name: r[1], club: r[2], l
   group: groupOf(r[5]), key: fold(r[1] + " " + r[2]) }));
 const CLUB_NAMES = D.club_names || {};
 const clubLine = p => (p.free ? "Free agent · last club " + (p.club || "unknown") : [p.club, p.league].filter(Boolean).join(" · ") || "No club");
-const state = { sort: "model", asc: false, page: 0, open: null, buyer: null, group: "", country: null };
+const state = { sort: "model", asc: false, page: 0, open: null, buyer: null, group: "", country: null, league: "" };
 const $ = id => document.getElementById(id);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const eur = k => k == null ? "–" : k === 0 ? "€0" : k >= 1000 ? "€" + (k / 1000).toFixed(k >= 10000 ? 0 : 1) + "m" : "€" + k + "k";
@@ -292,14 +304,13 @@ function chip(x) {
 $("facts").append(...[[P.length.toLocaleString("en"), "players"], [B.clubs.length, "buying clubs"],
   [new Set(P.map(p => p.league).filter(Boolean)).size, "leagues"], ["1 July 2026", "valuation date"]].map(([b, t]) => {
     const li = el("li"); li.append(el("b", null, b), " " + t); return li; }));
-[...new Set(P.map(p => p.league))].filter(Boolean).sort().forEach(v => $("league").append(new Option(v, v)));
 ["All", "Goalkeepers", "Defenders", "Midfielders", "Forwards"].forEach((g, i) => { const b = el("button", null, g); b.type = "button";
   b.dataset.g = i ? i - 1 : ""; b.setAttribute("aria-pressed", i === 0); $("pos").append(b); });
 $("pos").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return;
   state.group = b.dataset.g; [...$("pos").children].forEach(x => x.setAttribute("aria-pressed", x === b)); state.page = 0; render(); });
 
 function filtered() {
-  const q = fold($("q").value).trim(), lg = $("league").value, g = state.group, k = state.sort, s = state.asc ? 1 : -1;
+  const q = fold($("q").value).trim(), lg = state.league, g = state.group, k = state.sort, s = state.asc ? 1 : -1;
   return P.filter(p => (!q || p.key.includes(q)) && (g === "" || p.group === +g) && (!lg || p.league === lg))
     .sort((a, b) => k === "name" ? s * a.name.localeCompare(b.name)
       : (a[k] == null) - (b[k] == null) || s * (a[k] - b[k]) || b.tm - a.tm);
@@ -393,12 +404,50 @@ function comboList() {
   if (!hits.length) list.append(el("li", "empty", "No club found"));
   list.firstHit = hits[0];
 }
+// ---- league filter: same picker, one row per league with the flag of its country
+const LEAGUES = (() => {
+  const country = { "J1 League": "Japan" }, count = {};
+  for (const c of B.clubs) country[c[2]] = c[5];
+  for (const p of P) if (p.league) count[p.league] = (count[p.league] || 0) + 1;
+  const all = Object.keys(count).map(name => ({ name, short: name.replace(/ \(.*\)$/, ""), country: country[name] || "", n: count[name] }));
+  const rank = l => { const i = (B.top_countries || []).indexOf(l.country); return i < 0 ? 99 : i; };
+  all.sort((a, b) => rank(a) - rank(b) || countryName(a.country).localeCompare(countryName(b.country)) || a.name.localeCompare(b.name));
+  return { all, top: all.filter(l => rank(l) < 99), rest: all.filter(l => rank(l) === 99) };
+})();
+function leagueLabel() {
+  const l = LEAGUES.all.find(x => x.name === state.league);
+  $("lgBtn").replaceChildren(l ? flag(l.country) : "", el("span", null, l ? l.short : "All leagues"), el("small", null, "▾"));
+}
+function leagueList() {
+  const q = fold($("lgQ").value).trim(), list = $("lgList"); list.replaceChildren();
+  const row = l => { const li = el("li"); li.setAttribute("role", "option"); li.setAttribute("aria-selected", state.league === l.name);
+    li.append(flag(l.country), el("span", null, l.short), el("small", null, countryName(l.country) + " · " + l.n.toLocaleString("en") + " players"));
+    li.onclick = () => chooseLeague(l.name); list.append(li); };
+  if (!q) {
+    const li = el("li", "none", "All leagues"); li.setAttribute("aria-selected", state.league === ""); li.onclick = () => chooseLeague(""); list.append(li);
+    list.append(el("li", "head", "Biggest leagues")); LEAGUES.top.forEach(row);
+    list.append(el("li", "head", "Other countries")); LEAGUES.rest.forEach(row);
+    return;
+  }
+  const hits = LEAGUES.all.filter(l => fold(l.name + " " + countryName(l.country)).includes(q));
+  hits.forEach(row);
+  if (!hits.length) list.append(el("li", "empty", "No league found"));
+  list.firstHit = hits[0];
+}
+function chooseLeague(name) { state.league = name; state.page = 0; closeLeagues(); leagueLabel(); render(); }
+function closeLeagues() { $("lgCombo").classList.remove("open"); $("lgBtn").setAttribute("aria-expanded", "false"); }
+$("lgBtn").addEventListener("click", () => { if ($("lgCombo").classList.contains("open")) return closeLeagues();
+  $("lgCombo").classList.add("open"); $("lgBtn").setAttribute("aria-expanded", "true"); $("lgQ").value = ""; leagueList(); $("lgQ").focus(); });
+$("lgQ").addEventListener("input", leagueList);
+$("lgQ").addEventListener("keydown", e => { if (e.key === "Enter" && $("lgList").firstHit) chooseLeague($("lgList").firstHit.name); if (e.key === "Escape") closeLeagues(); });
+leagueLabel();
+
 function openCombo() { $("combo").classList.add("open"); $("comboBtn").setAttribute("aria-expanded", "true"); $("comboQ").value = ""; comboList(); $("comboQ").focus(); }
 function closeCombo() { $("combo").classList.remove("open"); $("comboBtn").setAttribute("aria-expanded", "false"); }
 $("comboBtn").addEventListener("click", () => $("combo").classList.contains("open") ? closeCombo() : openCombo());
 $("comboQ").addEventListener("input", comboList);
 $("comboQ").addEventListener("keydown", e => { if (e.key === "Enter" && $("comboList").firstHit) chooseBuyer($("comboList").firstHit); if (e.key === "Escape") closeCombo(); });
-document.addEventListener("click", e => { if (!$("combo").contains(e.target)) closeCombo(); });
+document.addEventListener("click", e => { if (!$("combo").contains(e.target)) closeCombo(); if (!$("lgCombo").contains(e.target)) closeLeagues(); });
 $("bannerClear").addEventListener("click", () => chooseBuyer(null));
 
 // ---- player detail
@@ -505,7 +554,7 @@ function render() {
 
 document.querySelectorAll("#cols button").forEach(b => b.addEventListener("click", () => {
   const k = b.dataset.k; state.asc = state.sort === k ? !state.asc : k === "name" || k === "group"; state.sort = k; state.page = 0; render(); }));
-["q", "league"].forEach(id => $(id).addEventListener("input", () => { state.page = 0; render(); }));
+$("q").addEventListener("input", () => { state.page = 0; render(); });
 const turn = d => { state.page += d; render(); $("count").scrollIntoView({ block: "start" }); };
 $("prev").addEventListener("click", () => turn(-1));
 $("next").addEventListener("click", () => turn(1));

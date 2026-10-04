@@ -78,4 +78,6 @@ python -m venv .venv
 ## Data
 
 - [transfermarkt-datasets](https://github.com/dcaribou/transfermarkt-datasets) (dcaribou), snapshot of 6 July 2026.
+- `data/manual_transfers.csv`: 24 major moves made after the snapshot (checked on the web, with sources), used
+  only to show where a player is today. Other moves made after 6 July 2026 are missing.
 - [football-transfers-data](https://github.com/d2ski/football-transfers-data) (d2ski), for club countries only.

@@ -34,6 +34,8 @@ def candidates(T, date, offset):
     q = pd.DataFrame({"player_id": tm.index, "tm_value": tm.values})
     q["tid"] = offset + np.arange(len(q))
     q["transfer_date"], q["from_club_id"], q["to_club_id"] = date, np.nan, np.nan
+    # the latest list shows where each player is today: moves recorded after the date count for his club
+    q["club_asof"] = pd.Timestamp.today().normalize() if date == DATES[-1] else date
     return q
 
 

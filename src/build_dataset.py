@@ -17,7 +17,7 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
     T = load_tables()
     t = T.transfers
-    s = t[(t.transfer_fee > 0) & (t.transfer_date >= START)].copy()
+    s = t[(t.transfer_fee > 0) & (t.transfer_date >= START) & ~t.manual].copy()
     s["tid"] = np.arange(len(s))
     log = [("paid transfers %s to %s" % (START, END), len(s))]
 
