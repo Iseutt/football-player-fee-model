@@ -346,6 +346,74 @@ window. New rows can be added to `data/manual_transfers.csv` at any time.
 **Files**: `data/manual_transfers.csv` (new), `src/features.py`, `src/build_dataset.py`,
 `src/value_players.py`, `docs/index.html`, site data.
 
+## Step 11 — Transfers of each player on the website (4 October 2026)
+
+**Asked**: show somewhere the value of the transfer when a player moved to another club, or
+say if it was a loan.
+
+**Done**: each player has a "Transfers" list (first in the panel under the chart, then on his own
+page, see Step 12): his last moves, newest first, each with the date, the two clubs with their crests, and the fee or the
+kind of move.
+
+- **The source has no field for the kind of move**, so it is worked out from the moves
+  themselves: a move followed by a free return to the same club is a loan; the return is the
+  end of the loan; a paid move followed by a free return more than 45 days later, at a price
+  far below the player's value, is a loan with a fee; a move to "Without Club" is a contract
+  that ended; a move with no fee and no return is a free transfer; a move with no fee published
+  is shown as "fee not disclosed"; a move from or to a youth or reserve team without a fee is
+  shown as such.
+- A loan still running is recognised because the source already holds its scheduled return.
+- The 24 moves entered by hand (Step 10) show their own description, for example Balerdi:
+  "Loan (fee EUR 1m, option to buy EUR 16m)".
+- 117,025 moves for 19,293 players: 13,941 transfers with a fee, 18,175 free transfers,
+  22,072 loans, 20,427 ends of loan, 30,031 youth or reserve moves, 9,613 undisclosed fees,
+  2,577 contracts ended.
+- The moves are stored with the player profiles (`docs/players/`, Step 12).
+
+**Limit**: these labels are deductions, not facts from the source. A free transfer and a loan
+whose return is not recorded cannot be told apart.
+
+**Files**: `src/value_players.py` (`player_moves`), `docs/index.html`.
+
+## Step 12 — A profile page for each player (4 October 2026)
+
+**Asked**: clicking a player should open a separate page, in the spirit of a Transfermarkt
+player profile, with all the statistics the dataset has on him and the chart, so that it is
+clear how his value is estimated.
+
+**Done**: `docs/player.html`. A click on a player in the list opens his page (the chosen
+buying club is carried along, and kept when going back). The page shows:
+
+- **Header**: photo, club with crest, position, age and date of birth, height, foot,
+  nationality, time at the club, fee the club paid; the model price with its range, the
+  Transfermarkt value, and the price for the chosen buying club.
+- **How the model gets to this price**: the Transfermarkt value, then one line per group of
+  parameters with what it multiplies the price by and the running price, down to the model
+  price. Each group opens onto its parameters, with the player's own figure and its effect.
+  Below, the four figures that raise his price most and the four that lower it most.
+- **Value over time**: the five-year chart with the club of each year, and the yearly table.
+- **Playing time and output**: the last 365 days (games, minutes, goals, assists, per 90),
+  the team's results with him on the pitch, and career totals. A player without match data
+  gets a sentence saying so.
+- **Transfers**: his moves with fees and kinds (Step 11).
+
+**How the effects are computed**: SHAP values of the website model trained on all transfers
+before 1 July 2026, one per parameter and per player, multiplied by the scale-down for expensive
+players (Step 8). They add up exactly to the model's correction, so the lines of the page
+multiply to the model price. They describe what the model does for this player; they are not
+proof of what clubs pay for.
+
+Example, Estêvão (Transfermarkt value EUR 80m, model price EUR 124m): Transfermarkt value and
+its history -28%, player profile +29% (age 19: +18%), current club +22%, past transfers +21%,
+playing time and output +16%, market conditions -2%.
+
+**Technical notes**: parameter names and groups moved to `src/params.py`, shared by the method
+note and the website. Profiles are stored in 256 files (`docs/players/`, 17.7 MB in total),
+one of which is loaded when a player is opened. The inline panel of the list was removed.
+
+**Files**: `docs/player.html` (new), `docs/index.html`, `docs/players/` (new, replaces
+`docs/moves/`), `src/params.py` (new), `src/value_players.py`, `src/make_method_pdf.py`.
+
 ---
 
 ## Open points

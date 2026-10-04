@@ -39,6 +39,9 @@ how far the prices can be trusted. `Project_Transcript.md` is the log of every s
 value, and both prices on 1 July of 2022 to 2026. Each yearly price comes from a model trained
 only on transfers before that date. Open the file in a browser; no server is needed.
 
+Clicking a player opens his profile (`docs/player.html`): his statistics, his transfers, the five-year chart
+and a breakdown of how the model gets from the Transfermarkt value to its price.
+
 Choosing a buying club switches the prices to Model A: the fee expected if that club bought the
 player on 1 July 2026. Prices are precomputed for 508 clubs (`docs/buyers/`, one file per club,
 loaded on demand). Club crests and player photos are loaded from the Transfermarkt image servers.

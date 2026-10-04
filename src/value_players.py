@@ -14,9 +14,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from features import build_features, load_tables, season_of
+from features import MANUAL, NO_CLUB, YOUTH, build_features, load_tables, read, season_of
 from modeling import (CAT, FEATS_A, FEATS_V, OUT, RANGE_EDGES, apply_shrink, band_q, conformal_bands, fit_lgb,
-                      fit_ratio_model, predict_ratio, prepare)
+                      fit_ratio_model, predict_ratio, prepare, shrink_weight)
+from params import GROUP, LABEL, PARAMS
 
 DATES = pd.to_datetime([f"{y}-07-01" for y in range(2022, 2027)])
 ACTIVE_DAYS = 548      # a player is active if Transfermarkt valued him in the 18 months before the date
@@ -58,10 +59,84 @@ def usual_values(past, date):
 
 
 def stamp_site(version):
-    """Version the data files in index.html, so that a browser never mixes a new page with cached old data."""
-    f = SITE / "index.html"
-    f.write_text(re.sub(r"((?:data|buyers)\.js)(\?v=\w*)?", r"\1?v=" + version, f.read_text(encoding="utf-8")),
-                 encoding="utf-8", newline="\n")
+    """Version the data files in the pages, so that a browser never mixes a new page with cached old data."""
+    for f in (SITE / "index.html", SITE / "player.html"):
+        if f.exists():
+            f.write_text(re.sub(r"((?:data|buyers)\.js)(\?v=\w*)?", r"\1?v=" + version, f.read_text(encoding="utf-8")),
+                         encoding="utf-8", newline="\n")
+
+
+MOVE_KINDS = ["Transfer", "Free transfer", "Loan", "End of loan", "Contract ended", "Retired", "Fee not disclosed",
+              "Youth or reserve team", "Career break"]
+PLAYER_FILES = 256
+
+
+def player_moves(player_ids):
+    """Last moves of each listed player with the fee or the kind of move."""
+    t = read("transfers", parse_dates=["transfer_date"])
+    t = t.drop_duplicates(["player_id", "transfer_date", "from_club_id", "to_club_id"]).assign(note="")
+    if MANUAL.exists():
+        m = pd.read_csv(MANUAL, parse_dates=["transfer_date"]).rename(columns={"kind": "note"})
+        t = pd.concat([t, m[[c for c in t.columns if c in m.columns]]], ignore_index=True)
+    t = t[t.player_id.isin(player_ids)].sort_values(["player_id", "transfer_date"], kind="stable").reset_index(drop=True)
+    g = t.groupby("player_id")
+    nxt = {c: g[c].shift(-1) for c in ["from_club_id", "to_club_id", "transfer_fee", "transfer_date"]}
+    prv = {c: g[c].shift(1) for c in ["from_club_id", "to_club_id"]}
+    paid, unpaid_next = t.transfer_fee > 0, nxt["transfer_fee"].fillna(0) == 0
+    goes_back = (nxt["to_club_id"] == t.from_club_id) & (nxt["from_club_id"] == t.to_club_id) & unpaid_next
+    gap = (nxt["transfer_date"] - t.transfer_date).dt.days
+    came_back = (prv["from_club_id"] == t.to_club_id) & (prv["to_club_id"] == t.from_club_id) & ~paid
+    # a paid move followed by a free return is a loan with a fee, unless the return comes at once (bought, then
+    # loaned back) or the price was close to the player's value
+    loan_fee = paid & goes_back & (gap > 45) & (gap <= 800) & (t.transfer_fee / t.market_value_in_eur < 0.35)
+    youth = (t.from_club_name.fillna("").str.contains(YOUTH, regex=True) |
+             t.to_club_name.fillna("").str.contains(YOUTH, regex=True)) & ~paid
+    kind = np.select(
+        [t.note.str.contains("loan"), t.note.str.contains("free"), t.note.str.contains("permanent"),
+         t.to_club_name == "Without Club", t.to_club_name == "Retired", t.to_club_name.isin(NO_CLUB),
+         loan_fee | (~paid & goes_back), came_back, paid, youth, t.transfer_fee == 0],
+        [2, 1, 0, 4, 5, 8, 2, 3, 0, 7, 1], 6)
+    t["kind"] = kind
+    t = t[t.transfer_date <= pd.Timestamp.today()].groupby("player_id").tail(12)     # scheduled future returns are not shown
+    names = pd.concat([t[["from_club_id", "from_club_name"]].set_axis(["id", "name"], axis=1),
+                       t[["to_club_id", "to_club_name"]].set_axis(["id", "name"], axis=1)]).dropna().drop_duplicates("id")
+    num = lambda x: None if pd.isna(x) else int(x)  # noqa: E731
+    moves = {int(pid): [[r.transfer_date.strftime("%Y-%m-%d"), num(r.from_club_id), num(r.to_club_id),
+                         None if pd.isna(r.transfer_fee) else int(round(r.transfer_fee / 1000)), int(r.kind), r.note]
+                        for r in rows.itertuples()] for pid, rows in t.groupby("player_id")}
+    print("moves:", len(t), "rows for", t.player_id.nunique(), "players |",
+          t.kind.map(dict(enumerate(MOVE_KINDS))).value_counts().to_dict())
+    return moves, {int(i): n for i, n in zip(names.id, names.name)}
+
+
+def player_files(last, contrib, version):
+    """One profile per listed player for the website (docs/players/): the value of every parameter of the model,
+    what each one adds to or takes from the price, and the player's moves."""
+    moves, names = player_moves(last.index)
+    out = SITE / "players"
+    shutil.rmtree(out, ignore_errors=True)
+    shutil.rmtree(SITE / "moves", ignore_errors=True)
+    out.mkdir(parents=True)
+
+    def val(x):
+        if isinstance(x, str):
+            return x
+        return None if pd.isna(x) else float("%.4g" % x)
+
+    values = last[FEATS_V].astype({c: str for c in FEATS_V if c in CAT})
+    for b, ids in pd.Series(last.index, index=last.index).groupby(last.index % PLAYER_FILES):
+        players, used = {}, set()
+        for pid in ids:
+            mv = moves.get(int(pid), [])
+            used.update(x for m in mv for x in m[1:3] if x is not None)
+            r = last.loc[pid]
+            players[int(pid)] = {"v": [val(x) for x in values.loc[pid]],                    # value of each parameter
+                                 "c": [int(round(1000 * x)) for x in contrib.loc[pid]],      # log effect x 1000, base last
+                                 "mv": int(round(r.mv_pre / 1000)), "born": r.date_of_birth_str, "moves": mv}
+        data = {"names": {i: names[i] for i in used if i in names}, "players": players}
+        (out / f"{b}.js").write_text("window.PLAYERS=window.PLAYERS||{};window.PLAYERS[%d]=%s;"
+                                     % (b, json.dumps(data, ensure_ascii=False, separators=(",", ":"))), encoding="utf-8")
+    print("player profiles:", len(last), "| %.1f MB" % (sum(f.stat().st_size for f in out.iterdir()) / 1e6))
 
 
 def buyer_prices(p, buyers, tr, rounds, T, leagues, version):
@@ -149,6 +224,9 @@ def main():
         qp = band_q(q, p.mv_pre)                                  # the range is narrower for expensive players
         p["model_value"], p["model_lo"], p["model_hi"] = np.exp(p.pred_log), np.exp(p.pred_log - qp), np.exp(p.pred_log + qp)
         out.append(p)
+        if d == DATES[-1]:      # what each parameter adds to or takes from the price, after the scale-down
+            scale = 1 - shrink["c"] * shrink_weight(p.log_mv_pre.values, shrink["lo"], shrink["hi"])
+            contrib = pd.DataFrame(m.predict(p[FEATS_V], pred_contrib=True) * scale[:, None], index=p.player_id.values)
         print(d.date(), "trained on", len(past), "transfers | players valued:", len(p),
               "| 80% interval by value band: x/÷", np.exp(q).round(2), "| scale-down", shrink)
     out = pd.concat(out)
@@ -177,7 +255,9 @@ def main():
                      int(k(pd.Series([r.model_hi]))[0]), None if pd.isna(r.from_club_id) else int(r.from_club_id),
                      img.get(pid, ""), [None if pd.isna(x) else int(x) for x in wide.loc[pid, "from_club_id"]],
                      int(r.status != "")])
-    data = {"dates": [d.strftime("%Y-%m-%d") for d in DATES], "coverage": COVERAGE,
+    data = {"dates": [d.strftime("%Y-%m-%d") for d in DATES], "coverage": COVERAGE, "move_kinds": MOVE_KINDS,
+            "player_files": PLAYER_FILES, "groups": list(PARAMS),
+            "params": [[f, LABEL[f], list(PARAMS).index(GROUP[f])] for f in FEATS_V],
             "fields": ["id", "name", "club", "league", "country", "position", "age", "tm", "model", "lo", "hi", "club_id",
                        "photo", "club_by_year", "free_agent"],
             "club_names": {int(c): T.names[c] for c in pd.unique(wide["from_club_id"].values.ravel()) if c in T.names},
@@ -189,6 +269,8 @@ def main():
     print("site data:", len(rows), "players,", round((SITE / "data.js").stat().st_size / 1e6, 1), "MB")
     rounds_a = fit_lgb(tr[tr.split == "train"], tr[tr.split == "valid"], FEATS_A, "log_ratio").best_iteration
     version = pd.Timestamp.now().strftime("%Y%m%d%H%M")
+    born = T.players.set_index("player_id").date_of_birth.dt.strftime("%Y-%m-%d")
+    player_files(last.assign(date_of_birth_str=last.index.map(born)), contrib, version)
     buyer_prices(out[out.transfer_date == DATES[-1]], buyers, tr, rounds_a, T, leagues, version)
     stamp_site(version)
     top = last.sort_values("model_value", ascending=False).head(15)

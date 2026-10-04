@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Player · Player Fee Model</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --page: #f6f6f3; --surface: #ffffff; --raised: #fbfbfa; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --line: #e9e8e2; --axis: #d2d1c8; --hover: #f3f2ee; --model: #2a78d6; --tm: #eb6834; --accent: #2a78d6;
+  --accent-soft: #e6f0fc; --up: #0f7a55; --up-soft: #e2f5ee; --down: #b93232; --down-soft: #fbe9e9;
+  --gk: #eda100; --def: #4a3aa7; --mid: #1baf7a; --att: #e34948;
+  --shadow: 0 1px 2px rgba(11, 11, 11, .04), 0 8px 24px rgba(11, 11, 11, .05);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #0d0d0d; --surface: #171716; --raised: #1d1d1c; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --line: #2a2a28; --axis: #383835; --hover: #20201f; --model: #3987e5; --tm: #d95926; --accent: #3987e5;
+    --accent-soft: #14263d; --up: #4fd3a4; --up-soft: #12281f; --down: #f08a8a; --down-soft: #331a1a;
+    --gk: #c98500; --def: #9085e9; --mid: #199e70; --att: #e66767;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; color-scheme: light dark; }
+body { margin: 0; background: var(--page); color: var(--ink);
+  font: 15px/1.5 Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+main { max-width: 1120px; margin: 0 auto; padding: 28px 16px 72px; }
+a { color: inherit; }
+.back { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--ink-2); text-decoration: none;
+  padding: 8px 12px 8px 8px; border-radius: 10px; margin: 0 0 16px -8px; }
+.back:hover { background: var(--hover); color: var(--ink); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 22px; margin-bottom: 16px; }
+h2 { font-size: 17px; letter-spacing: -0.01em; margin: 0 0 4px; }
+.hint { color: var(--ink-2); font-size: 13px; margin: 0 0 16px; max-width: 78ch; }
+.crest { width: 20px; height: 20px; object-fit: contain; flex: none; }
+.crest.big { width: 30px; height: 30px; }
+
+/* header */
+.hero { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 24px; align-items: center; box-shadow: var(--shadow); }
+.photo { width: 120px; height: 120px; border-radius: 20px; background: var(--hover); object-fit: cover; object-position: top;
+  display: grid; place-items: center; font-size: 34px; font-weight: 700; color: var(--ink-2); }
+h1 { font-size: clamp(26px, 4vw, 36px); line-height: 1.1; letter-spacing: -0.03em; margin: 0 0 6px; }
+.clubline { display: flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: 15px; flex-wrap: wrap; }
+.facts { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 14px 0 0; }
+.facts div { font-size: 13px; }
+.facts dt { color: var(--muted); font-size: 12px; }
+.facts dd { margin: 0; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.facts i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.prices { display: grid; gap: 10px; min-width: 210px; }
+.pricebox { border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; background: var(--raised); }
+.pricebox small { display: block; color: var(--ink-2); font-size: 12px; }
+.pricebox b { display: flex; align-items: center; gap: 8px; font-size: 26px; letter-spacing: -0.02em; line-height: 1.2; }
+.pricebox b i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.pricebox.buyer { border-color: var(--accent); background: var(--accent-soft); }
+.chip { font-size: 13px; font-weight: 600; padding: 3px 9px; border-radius: 8px; white-space: nowrap; }
+.chip.up { color: var(--up); background: var(--up-soft); }
+.chip.down { color: var(--down); background: var(--down-soft); }
+
+/* how the price is built */
+.steps { border-top: 1px solid var(--line); }
+.step, .steps summary { display: grid; grid-template-columns: minmax(0, 1.5fr) 88px minmax(120px, 1fr) 96px; gap: 14px; align-items: center;
+  padding: 11px 4px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.steps details > summary { cursor: pointer; list-style: none; }
+.steps details > summary::-webkit-details-marker { display: none; }
+.steps details > summary:hover { background: var(--hover); }
+.steps .name { font-weight: 600; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.steps summary .name::before { content: "›"; color: var(--muted); font-size: 18px; line-height: 1; transition: transform .15s; }
+.steps details[open] > summary .name::before { transform: rotate(90deg); }
+.effect { text-align: right; font-weight: 600; }
+.effect.up { color: var(--up); } .effect.down { color: var(--down); }
+.bar { position: relative; height: 10px; }
+.bar::before { content: ""; position: absolute; left: 50%; top: -4px; bottom: -4px; width: 1px; background: var(--axis); }
+.bar span { position: absolute; top: 0; height: 100%; border-radius: 4px; }
+.bar .up { left: calc(50% + 1px); background: var(--up); }
+.bar .down { right: calc(50% + 1px); background: var(--down); }
+.running { text-align: right; color: var(--ink-2); }
+.step.total { border-bottom: 0; font-size: 16px; } .step.total .running { color: var(--ink); font-weight: 700; }
+.step.start .running { color: var(--ink); font-weight: 700; }
+.params { padding: 4px 4px 12px 26px; border-bottom: 1px solid var(--line); background: var(--raised); }
+.param { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 70px; gap: 12px; padding: 6px 0; font-size: 13px; align-items: baseline; }
+.param .val { color: var(--ink); font-weight: 500; }
+.param .lab { color: var(--ink-2); }
+.reasons { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 18px; }
+.reasons h3 { font-size: 13px; margin: 0 0 6px; color: var(--ink-2); font-weight: 600; }
+.reasons ul { list-style: none; margin: 0; padding: 0; }
+.reasons li { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.reasons li span:first-child { min-width: 0; }
+.reasons li small { display: block; color: var(--muted); }
+
+/* chart and table */
+.two { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 28px; align-items: start; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--ink-2); margin-bottom: 6px; }
+.legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; height: auto; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--axis); border-radius: 8px;
+  padding: 6px 9px; font-size: 12px; white-space: nowrap; display: none; box-shadow: var(--shadow); }
+.years { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.years th, .years td { padding: 7px 8px; text-align: right; border-bottom: 1px solid var(--line); }
+.years th { font-weight: 500; color: var(--muted); font-size: 12px; }
+.years th:first-child, .years td:first-child { text-align: left; }
+
+/* statistics */
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.tile { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: var(--raised); }
+.tile b { display: block; font-size: 22px; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.tile span { color: var(--ink-2); font-size: 12px; }
+.tiles + h3, h3.sub { font-size: 13px; color: var(--ink-2); font-weight: 600; margin: 18px 0 8px; }
+
+/* transfers */
+.move { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.move time { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; }
+.move .path { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
+.move .path span { white-space: nowrap; }
+.move .path i { color: var(--muted); font-style: normal; }
+.move .what { text-align: right; color: var(--ink-2); font-size: 13px; }
+.move .what b { color: var(--ink); font-weight: 700; font-size: 15px; }
+.missing { text-align: center; padding: 64px 16px; color: var(--ink-2); }
+
+@media (max-width: 860px) {
+  .hero { grid-template-columns: auto minmax(0, 1fr); }
+  .photo { width: 84px; height: 84px; border-radius: 16px; font-size: 24px; }
+  .prices { grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); min-width: 0; }
+  .step, .steps summary { grid-template-columns: minmax(0, 1fr) 70px 84px; }
+  .step .bar, .steps summary .bar { display: none; }
+  .two, .reasons { grid-template-columns: 1fr; }
+  .move { grid-template-columns: 1fr; gap: 2px; } .move .what { text-align: left; }
+  .param { grid-template-columns: minmax(0, 1fr) 64px; } .param .lab { grid-column: 1 / -1; }
+  .card { padding: 16px; }
+}
+</style>
+</head>
+<body>
+<main>
+  <a class="back" id="back" href="index.html">← All players</a>
+  <div id="app"><p class="missing">Loading…</p></div>
+</main>
+
+<script src="data.js?v=202610041816"></script>
+<script src="buyers.js?v=202610041816"></script>
+<script>
+const D = window.DATA, B = window.BUYERS || { clubs: [] }, YEARS = D.dates.map(d => d.slice(0, 4)), LAST = YEARS.length - 1;
+const Q = new URLSearchParams(location.search), ID = +Q.get("id"), BUYER = B.clubs.find(c => String(c[0]) === Q.get("buyer"));
+const $ = id => document.getElementById(id);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const eur = k => k == null ? "–" : k === 0 ? "€0" : k >= 1000 ? "€" + (k / 1000).toFixed(k >= 10000 ? 0 : 1) + "m" : "€" + Math.round(k) + "k";
+const pct = x => (x >= 0 ? "+" : "−") + Math.abs(x * 100).toFixed(Math.abs(x) < 0.0995 ? 1 : 0) + "%";
+const int = x => Math.round(x).toLocaleString("en");
+const GROUPS = ["Goalkeeper", "Defender", "Midfield", "Attack"], GROUP_VAR = ["--gk", "--def", "--mid", "--att"];
+const groupOf = pos => pos === "Goalkeeper" ? 0 : /Midfield/.test(pos) ? 2 : /Back|Defen/.test(pos) ? 1 : 3;
+if (BUYER) $("back").href = "index.html?buyer=" + BUYER[0];
+
+function crest(id, big) {
+  if (!id) return "";
+  const i = el("img", "crest" + (big ? " big" : "")); i.alt = ""; i.referrerPolicy = "no-referrer";
+  i.src = "https://tmssl.akamaized.net/images/wappen/" + (big ? "head" : "small") + "/" + id + ".png";
+  i.onerror = () => i.remove();
+  return i;
+}
+function load(src, then, fail) { const s = document.createElement("script"); s.src = src; s.onload = then; s.onerror = fail || then; document.head.append(s); }
+
+// ---- how a parameter value is written
+function show(key, v, p) {
+  if (v == null || v === "NA" || v === "nan") return "not available";
+  if (key === "sell_league") return p.league || (v === "OTHER" ? "League not covered by the data" : v);
+  if (typeof v === "string") return v;
+  if (/^log_/.test(key)) return eur(Math.exp(v) / 1000);
+  if (key === "age" || key === "years_tracked") return v.toFixed(1) + " years";
+  if (key === "height_in_cm") return v + " cm";
+  if (key === "tenure_days") return v < 60 ? Math.round(v) + " days" : (v / 365.25).toFixed(1) + " years";
+  if (key === "mv_pre_age_days") return int(v) + " days";
+  if (/^mv_chg/.test(key)) return pct(Math.exp(v) - 1);
+  if (key === "mv_vs_peak") return Math.round(Math.exp(v) * 100) + "% of his peak value";
+  if (/log_ratio/.test(key)) return "×" + Math.exp(v).toFixed(2);
+  if (/rate|share/.test(key)) return Math.round(v * 100) + "%";
+  if (key === "min_trend") return (v >= 0 ? "+" : "−") + int(Math.abs(v)) + " min";
+  if (key === "min_per_game_365") return int(v) + " min";
+  if (/^min_|_min$/.test(key)) return int(v) + " min";
+  if (key === "team_gd_p90_365") return (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(2);
+  if (/p90|ppg|points_per_game/.test(key)) return v.toFixed(2);
+  if (key === "sell_youth_team" || key === "has_appearances") return v ? "Yes" : "No";
+  return int(v);
+}
+
+function chart(p, names) {
+  const W = 520, H = 290, m = { l: 52, r: 40, t: 12, b: 78 }, ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg"); svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("role", "img"); svg.setAttribute("aria-label", "Model price, Transfermarkt value and club by year");
+  const add = (tag, attrs, text) => { const e = document.createElementNS(ns, tag);
+    for (const a in attrs) e.setAttribute(a, attrs[a]); if (text != null) e.textContent = text; svg.append(e); return e; };
+  const max = Math.max(...p.models.filter(v => v != null), ...p.tms.filter(v => v != null)) * 1.1 || 1;
+  const x = i => m.l + i * (W - m.l - m.r) / LAST, y = v => H - m.b - v / max * (H - m.t - m.b);
+  for (let i = 0; i <= 4; i++) { const v = max * i / 4;
+    add("line", { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), stroke: i ? "var(--line)" : "var(--axis)" });
+    add("text", { x: m.l - 8, y: y(v) + 4, "text-anchor": "end", "font-size": 11, fill: "var(--muted)" }, eur(Math.round(v))); }
+  YEARS.forEach((yr, i) => {                      // under each year: the club of the player on 1 July
+    add("text", { x: x(i), y: H - m.b + 18, "text-anchor": "middle", "font-size": 11, fill: "var(--muted)" }, yr);
+    const id = p.clubs[i], name = names[id];
+    if (!id || !name) return;
+    const img = add("image", { href: "https://tmssl.akamaized.net/images/wappen/small/" + id + ".png", x: x(i) - 11, y: H - m.b + 26, width: 22, height: 22 });
+    img.addEventListener("error", () => img.remove());
+    add("text", { x: x(i), y: H - 10, "text-anchor": "middle", "font-size": 10, fill: "var(--ink-2)" }, name.length > 14 ? name.slice(0, 13) + "…" : name);
+  });
+  const cross = add("line", { y1: m.t, y2: H - m.b, stroke: "var(--axis)", visibility: "hidden" });
+  for (const [vals, color] of [[p.tms, "var(--tm)"], [p.models, "var(--model)"]]) {
+    const pts = vals.map((v, i) => v == null ? null : [x(i), y(v)]).filter(Boolean);
+    add("polyline", { points: pts.map(a => a.join(",")).join(" "), fill: "none", stroke: color, "stroke-width": 2,
+      "stroke-linejoin": "round", "stroke-linecap": "round" });
+    pts.forEach(a => add("circle", { cx: a[0], cy: a[1], r: 4, fill: color, stroke: "var(--surface)", "stroke-width": 2 }));
+  }
+  const wrap = el("div", "chart"), tip = el("div", "tip"); wrap.append(svg, tip);
+  svg.addEventListener("pointermove", e => {
+    const b = svg.getBoundingClientRect(), px = (e.clientX - b.left) / b.width * W;
+    const i = Math.max(0, Math.min(LAST, Math.round((px - m.l) / ((W - m.l - m.r) / LAST))));
+    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
+    tip.textContent = `${YEARS[i]}${names[p.clubs[i]] ? " · " + names[p.clubs[i]] : ""} · Model ${eur(p.models[i])} · Transfermarkt ${eur(p.tms[i])}`;
+    tip.style.display = "block";
+    tip.style.left = Math.min(b.width - tip.offsetWidth, Math.max(0, x(i) / W * b.width - tip.offsetWidth / 2)) + "px";
+    tip.style.top = "0px";
+  });
+  svg.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); tip.style.display = "none"; });
+  return wrap;
+}
+
+function section(title, hint) {
+  const c = el("section", "card"); c.append(el("h2", null, title)); if (hint) c.append(el("p", "hint", hint)); return c;
+}
+function effectCell(log) {
+  const f = Math.exp(log) - 1;
+  return el("span", "effect " + (Math.abs(f) < 0.0005 ? "" : f > 0 ? "up" : "down"), pct(f));
+}
+function barCell(log, scale) {
+  const b = el("div", "bar"), s = el("span", log >= 0 ? "up" : "down"); s.style.width = Math.min(50, Math.abs(log) / scale * 50) + "%"; b.append(s); return b;
+}
+
+function render(p, x, names) {
+  const app = $("app"); app.replaceChildren();
+  document.title = p.name + " · Player Fee Model";
+  const V = Object.fromEntries(D.params.map((q, i) => [q[0], x.v[i]])), C = x.c.map(v => v / 1000), base = C[C.length - 1];
+  const g = groupOf(p.pos);
+
+  // ---- header
+  const hero = el("section", "card hero"), info = el("div"), prices = el("div", "prices");
+  const initials = el("div", "photo", p.name.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase());
+  let photo = initials;
+  if (p.photo) { photo = el("img", "photo"); photo.alt = ""; photo.referrerPolicy = "no-referrer";
+    photo.src = "https://img.a.transfermarkt.technology/portrait/header/" + p.id + "-" + p.photo; photo.onerror = () => photo.replaceWith(initials); }
+  const clubline = el("div", "clubline");
+  clubline.append(crest(p.clubId, true), p.free ? "Free agent · last club " + (p.club || "unknown") : [p.club, p.league].filter(Boolean).join(" · ") || "No club");
+  const facts = el("dl", "facts"), fact = (k, v, dot) => { if (v == null || v === "" || v === "not available") return;
+    const d = el("div"), dd = el("dd"); if (dot) { const i = el("i"); i.style.background = dot; dd.append(i); } dd.append(v); d.append(el("dt", null, k), dd); facts.append(d); };
+  const born = x.born ? new Date(x.born + "T00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : null;
+  fact("Position", p.pos, `var(${GROUP_VAR[g]})`); fact("Age", Math.floor(p.age) + (born ? " (" + born + ")" : ""));
+  fact("Height", show("height_in_cm", V.height_in_cm, p)); fact("Foot", V.foot && V.foot !== "NA" ? V.foot[0].toUpperCase() + V.foot.slice(1) : null);
+  fact("Nationality", V.citizenship !== "NA" ? V.citizenship : null); fact("Plays in", p.country !== "Unknown" ? p.country : null);
+  if (!p.free) { fact("At the club for", show("tenure_days", V.tenure_days, p)); fact("Fee paid by the club", show("log_seller_paid_fee", V.log_seller_paid_fee, p)); }
+  info.append(el("h1", null, p.name), clubline, facts);
+  const box = (label, value, color, extra, cls) => { const d = el("div", "pricebox" + (cls ? " " + cls : "")), b = el("b");
+    if (color) { const i = el("i"); i.style.background = color; b.append(i); } b.append(value); d.append(el("small", null, label), b); if (extra) d.append(extra); prices.append(d); return d; };
+  const diff = p.base / p.tm - 1, chip = el("span", "chip " + (diff >= 0 ? "up" : "down"), (diff >= 0 ? "▲ " : "▼ ") + pct(diff) + " vs Transfermarkt");
+  const range = el("small", null, "Likely between " + eur(p.baseLo) + " and " + eur(p.baseHi));
+  box("Model price, 1 July 2026", eur(p.base), "var(--model)", range).append(chip);
+  box("Transfermarkt value", eur(p.tm), "var(--tm)");
+  hero.append(photo, info, prices); app.append(hero);
+  if (p.free) app.append(Object.assign(el("p", "hint"), { textContent: "Out of contract on 1 July 2026: a club would pay no fee for him. The price is what he would cost if he were still under contract at his last club." }));
+
+  // ---- price for a buying club
+  if (BUYER) {
+    const done = () => { const raw = window.BUYER_DATA && window.BUYER_DATA[BUYER[0]];
+      if (!raw) return;
+      const v = Int8Array.from(atob(raw), c => c.charCodeAt(0))[p.idx];
+      if (v === -128) { box("If " + BUYER[1] + " buys", "–", null, el("small", null, "He already plays there"), "buyer"); return; }
+      const price = p.tm * Math.exp(v * B.step), rg = B.range[B.range_edges.filter(e => p.tm >= e).length];
+      const rough = p.tm < BUYER[3] || p.tm > BUYER[4];
+      const d = box("If " + BUYER[1] + " buys (full model)", eur(price), null,
+        el("small", null, rough ? "Rough guess: unusual deal for a club of " + BUYER[2] : "Likely between " + eur(price / rg) + " and " + eur(price * rg)), "buyer");
+      d.querySelector("b").prepend(crest(BUYER[0], true)); };
+    load("buyers/" + BUYER[0] + ".js?v=" + B.version, done);
+  }
+
+  // ---- how the price is built
+  const how = section("How the model gets to this price",
+    "The model starts from the Transfermarkt value and corrects it. Each line multiplies the price: +10% means the price is multiplied by 1.10. Open a line to see the player's own figures and what each one changes.");
+  const steps = el("div", "steps"), groups = D.groups.map((name, gi) => ({ name, idx: D.params.map((q, i) => q[2] === gi ? i : -1).filter(i => i >= 0) }));
+  groups.forEach(G => { G.log = G.idx.reduce((s, i) => s + C[i], 0); });
+  const scale = Math.max(0.2, Math.abs(base), ...groups.map(G => Math.abs(G.log)));
+  let run = x.mv;
+  const line = (cls, name, log, tag) => { const r = el(tag || "div", cls), n = el("span", "name", name);
+    if (log == null) r.append(n, el("span"), el("span"), el("span", "running", eur(run)));
+    else { run *= Math.exp(log); r.append(n, effectCell(log), barCell(log, scale), el("span", "running", eur(run))); }
+    return r; };
+  steps.append(line("step start", "Transfermarkt value" + (x.mv !== p.tm ? " used by the model (30 days old or more)" : "")));
+  steps.append(line("step", "Average gap between fees and Transfermarkt values", base));
+  groups.forEach(G => {
+    const d = el("details"), list = el("div", "params");
+    d.append(line("", G.name, G.log, "summary"));
+    [...G.idx].sort((a, b) => Math.abs(C[b]) - Math.abs(C[a])).forEach(i => { const r = el("div", "param");
+      r.append(el("span", "lab", D.params[i][1]), el("span", "val", show(D.params[i][0], x.v[i], p)), effectCell(C[i])); list.append(r); });
+    d.append(list); steps.append(d);
+  });
+  const total = el("div", "step total"); total.append(el("span", "name", "Model price"), el("span"), el("span"), el("span", "running", eur(p.base)));
+  steps.append(total); how.append(steps);
+  const ranked = D.params.map((q, i) => ({ q, i, c: C[i] })).sort((a, b) => b.c - a.c);
+  const reasons = el("div", "reasons");
+  for (const [title, list] of [["What raises his price most", ranked.slice(0, 4).filter(r => r.c > 0.002)], ["What lowers it most", ranked.slice(-4).reverse().filter(r => r.c < -0.002)]]) {
+    const col = el("div"), ul = el("ul"); col.append(el("h3", null, title));
+    list.forEach(r => { const li = el("li"), a = el("span"); a.append(r.q[1], el("small", null, show(r.q[0], x.v[r.i], p))); li.append(a, effectCell(r.c)); ul.append(li); });
+    if (!list.length) ul.append(el("li", null, "Nothing notable"));
+    col.append(ul); reasons.append(col);
+  }
+  how.append(reasons); app.append(how);
+
+  // ---- value over time
+  const time = section("Value over time", "On 1 July of each year, with the club he was at. Each yearly price comes from a model that only knew earlier transfers.");
+  const two = el("div", "two"), left = el("div"), legend = el("div", "legend");
+  for (const [label, c] of [["Model price", "var(--model)"], ["Transfermarkt value", "var(--tm)"]]) { const s = el("span"), i = el("i"); i.style.background = c; s.append(i, label); legend.append(s); }
+  left.append(legend, chart(p, D.club_names || {}));
+  const t = el("table", "years"), h = el("tr"); ["1 July", "Club", "Model", "Transfermarkt", "Difference"].forEach(k => h.append(el("th", null, k))); t.append(h);
+  YEARS.forEach((yr, i) => { const r = el("tr"), d = p.models[i] != null && p.tms[i] ? pct(p.models[i] / p.tms[i] - 1) : "–";
+    [yr, (D.club_names || {})[p.clubs[i]] || "–", eur(p.models[i]), eur(p.tms[i]), d].forEach(k => r.append(el("td", null, k))); t.append(r); });
+  two.append(left, t); time.append(two); app.append(time);
+
+  // ---- statistics
+  const stats = section("Playing time and output", "The 365 days before 1 July 2026, in the competitions covered by the data.");
+  const tile = (box, label, key) => { const d = el("div", "tile"); d.append(el("b", null, show(key, V[key], p).replace(" min", "")), el("span", null, label)); box.append(d); };
+  if (!V.has_appearances) stats.append(el("p", "hint", "No match data for this player: the source only covers top divisions and European cups. The model then relies on the other parameters."));
+  else {
+    const a = el("div", "tiles"), b = el("div", "tiles"), c = el("div", "tiles");
+    [["Games", "games_365"], ["Minutes", "min_365"], ["Goals", "goals_365"], ["Assists", "assists_365"], ["Goals + assists per 90 min", "ga_p90_365"],
+     ["Minutes per game", "min_per_game_365"], ["Games played in full", "full_game_share_365"], ["Minutes for his current club", "min_seller_365"]].forEach(k => tile(a, ...k));
+    [["Team goals conceded per 90 min", "conceded_p90_365"], ["Games without conceding", "clean_sheet_rate_365"], ["Team goals scored per 90 min", "team_scored_p90_365"],
+     ["Team points per game with him", "points_per_game_365"], ["Cards per 90 min", "cards_p90_365"]].forEach(k => tile(b, ...k));
+    [["Career games", "career_games"], ["Career minutes", "career_min"], ["Career goals", "career_goals"], ["Career assists", "career_assists"]].forEach(k => tile(c, ...k));
+    stats.append(a, el("h3", "sub", "With him on the pitch"), b, el("h3", "sub", "Career in covered competitions"), c);
+  }
+  app.append(stats);
+
+  // ---- transfers
+  const moves = section("Transfers", "The fee when one was paid and published. Loans and free transfers are worked out from the moves themselves, because the source does not label them.");
+  if (!x.moves.length) moves.append(el("p", "hint", "No move on record."));
+  [...x.moves].reverse().forEach(([date, from, to, fee, kind, note]) => {
+    const row = el("div", "move"), path = el("div", "path"), what = el("div", "what");
+    const side = id => { const s = el("span"); s.append(names[id] || "Unknown"); return [crest(id), s]; };
+    path.append(...side(from), el("i", null, "→"), ...side(to));
+    if (kind === 0) what.append(el("b", null, fee ? eur(fee) : "Transfer"));
+    else if (kind === 2) what.append(note ? note[0].toUpperCase() + note.slice(1) : "Loan" + (fee ? " · fee " + eur(fee) : ""));
+    else what.append(D.move_kinds[kind]);
+    if (note && /approximate/.test(note)) what.append(" · date approximate");
+    row.append(el("time", null, new Date(date + "T00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })), path, what);
+    moves.append(row);
+  });
+  app.append(moves);
+  app.append(Object.assign(el("p", "hint"), { textContent: "The effects shown are how the model's price changes because of each figure, for this player (SHAP values). They are estimates of what the model does, not proof of what clubs pay for. Data: Transfermarkt, via the open transfermarkt-datasets project, up to 6 July 2026." }));
+}
+
+(function start() {
+  const idx = D.players.findIndex(r => r[0] === ID);
+  if (idx < 0) { $("app").replaceChildren(el("p", "missing", "Player not found. Go back to the list and pick a player.")); return; }
+  const r = D.players[idx];
+  const p = { idx, id: r[0], name: r[1], club: r[2], league: r[3], country: r[4], pos: r[5], age: r[6], tms: r[7], models: r[8], tm: r[7][LAST],
+    base: r[8][LAST], baseLo: r[9], baseHi: r[10], clubId: r[11], photo: r[12], clubs: r[13] || [], free: !!r[14] };
+  const b = ID % D.player_files;
+  load("players/" + b + ".js?v=" + B.version, () => {
+    const data = window.PLAYERS && window.PLAYERS[b], x = data && data.players[ID];
+    if (!x) { $("app").replaceChildren(el("p", "missing", "The profile of this player could not be loaded.")); return; }
+    render(p, x, Object.assign({}, D.club_names, data.names));
+  });
+})();
+</script>
+</body>
+</html>
