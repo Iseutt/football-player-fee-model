@@ -42,6 +42,10 @@ only on transfers before that date. Open the file in a browser; no server is nee
 Clicking a player opens his profile (`docs/player.html`): his statistics, his transfers, the five-year chart
 and a breakdown of how the model gets from the Transfermarkt value to its price.
 
+The Clubs section (`docs/clubs.html`, `docs/club.html`) gives each club's squad value according to the model
+and to Transfermarkt, its last results, its last arrivals and departures with the fee, the Transfermarkt value
+and the model price, and a tested statement of whether it usually sells and buys above or below other clubs.
+
 Choosing a buying club switches the prices to Model A: the fee expected if that club bought the
 player on 1 July 2026. Prices are precomputed for 508 clubs (`docs/buyers/`, one file per club,
 loaded on demand). Club crests and player photos are loaded from the Transfermarkt image servers.
@@ -56,6 +60,7 @@ python -m venv .venv
 .venv/Scripts/python src/tune.py             # optional: Optuna search
 .venv/Scripts/python src/train_model.py      # benchmarks, models, intervals, SHAP, price gaps
 .venv/Scripts/python src/value_players.py    # player values 2022-2026 and website data
+.venv/Scripts/python src/club_data.py        # club pages of the website
 .venv/Scripts/python src/make_method_pdf.py  # Player_Valuation_Method.pdf
 .venv/Scripts/python src/make_stats_pdf.py   # Statistics.pdf
 ```

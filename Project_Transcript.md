@@ -439,6 +439,53 @@ tiles, the bars, the yearly table and the long explanations. The underlying data
 
 **Files**: `docs/player.html`.
 
+## Step 14 — Club pages (5 October 2026)
+
+**Asked**: a part of the site reserved to clubs, with the valuation of their team, their last
+results, their last transfers according to the model and to Transfermarkt, and a statistic
+that says whether the club usually sells below or above the set prices.
+
+**Done**:
+
+- **Clubs list** (`docs/clubs.html`): the 508 clubs of the leagues covered in 2025/26, with the
+  number of listed players, the squad value according to the model and to Transfermarkt, the
+  difference, and the club's selling habit in a few words. Sortable and searchable.
+- **Club page** (`docs/club.html`): crest, league, league position and record of the last
+  season, squad value; the squad with each player's Transfermarkt value and model price; the
+  last 12 departures and 12 arrivals with the fee, the player's Transfermarkt value before the
+  move and the fee the model expected; the last six results; and two boxes, "When it sells"
+  and "When it buys".
+- Navigation: Players / Clubs at the top of the list pages; the club of a player links to its
+  club page; players in a club page link to their profile.
+
+**How the selling and buying record is measured**:
+
+- Sample: the club's paid transfers since 2014 with a Transfermarkt value before the deal (the
+  transfers of the model's dataset). At least 8 are required to say anything; 364 clubs of the
+  508 have that many sales.
+- **Compared with other clubs**: for each deal, ln(fee / Transfermarkt value) minus the market
+  median of the same year, so that years when the whole market paid more or less do not count
+  for or against a club. The figure shown is the club's typical (median) gap. It is tested with
+  a Wilcoxon signed-rank test at 5%: a few extreme deals do not decide the answer.
+- **Compared with the model price**: the same with ln(fee / model price), where the model price
+  is the cross-fitted full model (it never saw the deal it prices). The full model already
+  knows how the club sold over the previous three years, so this gap is what is left once that
+  habit is taken into account. It is smaller by construction.
+- Result: 21 clubs sell significantly above what other clubs get and 48 significantly below;
+  the others have no clear habit or too few sales. Example: Arsenal, 37 paid sales, typical fee
+  0.77 times the Transfermarkt value, 34% below other clubs in the same years (significant),
+  8% below the model price; when it buys, 21% above other clubs.
+- With 364 clubs tested at 5%, about 18 would come out "significant" by chance alone. The 69
+  found are well above that, but an individual club's verdict is not certain.
+
+**Squad value**: the sum of the model prices (no buyer) of the players listed on the site at
+their club of today. Players on loan elsewhere on that date are counted at the club they are
+loaned to.
+
+**Files**: `src/club_data.py` (new, run after `value_players.py`), `docs/clubs.html`,
+`docs/club.html`, `docs/site.css`, `docs/clubs.js`, `docs/clubs/` (new); `docs/index.html`
+and `docs/player.html` (navigation).
+
 ---
 
 ## Open points

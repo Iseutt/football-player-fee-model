@@ -60,9 +60,9 @@ def usual_values(past, date):
 
 def stamp_site(version):
     """Version the data files in the pages, so that a browser never mixes a new page with cached old data."""
-    for f in (SITE / "index.html", SITE / "player.html"):
+    for f in (SITE / "index.html", SITE / "player.html", SITE / "clubs.html", SITE / "club.html"):
         if f.exists():
-            f.write_text(re.sub(r"((?:data|buyers)\.js)(\?v=\w*)?", r"\1?v=" + version, f.read_text(encoding="utf-8")),
+            f.write_text(re.sub(r"((?:data|buyers|clubs)\.js|site\.css)(\?v=\w*)?", r"\1?v=" + version, f.read_text(encoding="utf-8")),
                          encoding="utf-8", newline="\n")
 
 
@@ -71,14 +71,16 @@ MOVE_KINDS = ["Transfer", "Free transfer", "Loan", "End of loan", "Contract ende
 PLAYER_FILES = 256
 
 
-def player_moves(player_ids):
-    """Last moves of each listed player with the fee or the kind of move."""
+def classified_moves(player_ids=None):
+    """Every recorded move up to today, with its kind (transfer, loan, end of loan, free transfer, ...)."""
     t = read("transfers", parse_dates=["transfer_date"])
     t = t.drop_duplicates(["player_id", "transfer_date", "from_club_id", "to_club_id"]).assign(note="")
     if MANUAL.exists():
         m = pd.read_csv(MANUAL, parse_dates=["transfer_date"]).rename(columns={"kind": "note"})
         t = pd.concat([t, m[[c for c in t.columns if c in m.columns]]], ignore_index=True)
-    t = t[t.player_id.isin(player_ids)].sort_values(["player_id", "transfer_date"], kind="stable").reset_index(drop=True)
+    if player_ids is not None:
+        t = t[t.player_id.isin(player_ids)]
+    t = t.sort_values(["player_id", "transfer_date"], kind="stable").reset_index(drop=True)
     g = t.groupby("player_id")
     nxt = {c: g[c].shift(-1) for c in ["from_club_id", "to_club_id", "transfer_fee", "transfer_date"]}
     prv = {c: g[c].shift(1) for c in ["from_club_id", "to_club_id"]}
@@ -97,7 +99,12 @@ def player_moves(player_ids):
          loan_fee | (~paid & goes_back), came_back, paid, youth, t.transfer_fee == 0],
         [2, 1, 0, 4, 5, 8, 2, 3, 0, 7, 1], 6)
     t["kind"] = kind
-    t = t[t.transfer_date <= pd.Timestamp.today()].groupby("player_id").tail(12)     # scheduled future returns are not shown
+    return t[t.transfer_date <= pd.Timestamp.today()]                                 # scheduled future returns are not shown
+
+
+def player_moves(player_ids):
+    """Last moves of each listed player with the fee or the kind of move."""
+    t = classified_moves(player_ids).groupby("player_id").tail(12)
     names = pd.concat([t[["from_club_id", "from_club_name"]].set_axis(["id", "name"], axis=1),
                        t[["to_club_id", "to_club_name"]].set_axis(["id", "name"], axis=1)]).dropna().drop_duplicates("id")
     num = lambda x: None if pd.isna(x) else int(x)  # noqa: E731

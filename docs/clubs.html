@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Clubs · Player Fee Model</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="site.css?v=202610041816">
+</head>
+<body>
+<main>
+  <div class="top"><a class="brand" href="index.html"><i></i>Player fee model</a>
+    <nav class="nav"><a href="index.html">Players</a><a href="clubs.html" aria-current="page">Clubs</a></nav></div>
+  <h1>Clubs</h1>
+  <p class="lede">The value of each squad according to the model and to Transfermarkt, and whether the club usually sells
+    its players above or below what other clubs get. Click a club for its squad, results and transfers.</p>
+  <input class="field" id="q" type="search" placeholder="Search a club, a league or a country" aria-label="Search a club, a league or a country" autocomplete="off">
+  <section class="box"><div class="scroll"><table>
+    <thead><tr><th class="l" data-k="1">Club</th><th class="hide-s" data-k="4">Players</th><th data-k="6">Squad value, model</th>
+      <th data-k="5">Transfermarkt</th><th class="hide-s" data-k="d">Difference</th><th data-k="8">When it sells</th></tr></thead>
+    <tbody id="rows"></tbody></table></div></section>
+  <div class="pager"><button id="prev" type="button">Previous</button><span id="page"></span><button id="next" type="button">Next</button></div>
+  <p class="foot">Squad value: the sum of the model prices (no buyer) of the club's players listed on the site, on 1 July 2026.
+    "When it sells" compares the fees the club obtained since 2014 with those other clubs obtained, the same years, for players
+    with the same Transfermarkt value. Grey means too few sales or a difference that could be chance.</p>
+</main>
+<script src="clubs.js?v=202610041816"></script>
+<script>
+const C = window.CLUBS, PER = 40, state = { sort: "6", asc: false, page: 0 };
+const $ = id => document.getElementById(id);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const eur = k => k == null ? "–" : k >= 1e6 ? "€" + (k / 1e6).toFixed(2) + "bn" : k >= 1000 ? "€" + (k / 1000).toFixed(k >= 10000 ? 0 : 1) + "m" : "€" + Math.round(k) + "k";
+const pct = x => (x >= 0 ? "+" : "−") + Math.abs(x * 100).toFixed(0) + "%";
+const fold = s => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/ø/g, "o").replace(/ł/g, "l").replace(/ı/g, "i");
+const FLAG = { England: "gb-eng", Scotland: "gb-sct", Spain: "es", Germany: "de", Italy: "it", France: "fr", Portugal: "pt", Netherlands: "nl",
+  Belgium: "be", "Türkiye": "tr", Austria: "at", Switzerland: "ch", Denmark: "dk", Greece: "gr", Croatia: "hr", Norway: "no", Poland: "pl",
+  Romania: "ro", Russia: "ru", Sweden: "se", Serbia: "rs", "Czech Republic": "cz", Ukraine: "ua", Argentina: "ar", Australia: "au", Brazil: "br",
+  Japan: "jp", Mexico: "mx", "United States": "us", "Korea, South": "kr", "Saudi Arabia": "sa" };
+function img(cls, src) { const i = el("img", cls); i.alt = ""; i.loading = "lazy"; i.referrerPolicy = "no-referrer"; i.src = src; i.onerror = () => i.remove(); return i; }
+// the club's selling habit, in a few words
+function habit(n, v, p) {
+  if (n < C.min_deals || v == null) return el("span", "chip flat", "too few sales");
+  if (p >= 0.05) return el("span", "chip flat", "no clear habit");
+  return el("span", "chip " + (v > 0 ? "up" : "down"), v > 2 ? "×" + (1 + v).toFixed(1) + " the fees of others" : pct(v) + (v > 0 ? " above" : " below") + " others");
+}
+const value = (r, k) => k === "d" ? r[6] / r[5] : k === "8" ? (r[7] >= C.min_deals && r[9] < 0.05 ? r[8] : null) : r[+k];
+function rows() {
+  const q = fold($("q").value).trim(), k = state.sort, s = state.asc ? 1 : -1;
+  return C.clubs.filter(r => !q || fold(r[1] + " " + r[2] + " " + r[3]).includes(q)).sort((a, b) => {
+    const x = value(a, k), y = value(b, k);
+    return k === "1" ? s * x.localeCompare(y) : (x == null) - (y == null) || s * (x - y); });
+}
+function render() {
+  const list = rows(), pages = Math.max(1, Math.ceil(list.length / PER)); state.page = Math.min(state.page, pages - 1);
+  $("rows").replaceChildren(...list.slice(state.page * PER, (state.page + 1) * PER).map(r => {
+    const tr = el("tr", "go"), first = el("td", "l"), a = el("a"), name = el("span");
+    a.href = "club.html?id=" + r[0]; name.append(el("b", null, r[1]), el("br"), el("small", null, r[2].replace(/ \(.*\)$/, "") + " · " + (r[3] === "Korea, South" ? "South Korea" : r[3])));
+    a.append(img("crest big", "https://tmssl.akamaized.net/images/wappen/small/" + r[0] + ".png"), name);
+    if (FLAG[r[3]]) a.append(img("flag", "https://flagcdn.com/w40/" + FLAG[r[3]] + ".png"));
+    first.append(a);
+    const diff = r[5] ? r[6] / r[5] - 1 : null, last = el("td"); last.append(habit(r[7], r[8], r[9]));
+    const d = el("td", "hide-s"); if (diff != null) d.append(el("span", "chip " + (diff >= 0 ? "up" : "down"), (diff >= 0 ? "▲ " : "▼ ") + pct(diff)));
+    tr.append(first, el("td", "hide-s soft", r[4]), el("td", "strong", eur(r[6])), el("td", "soft", eur(r[5])), d, last);
+    tr.addEventListener("click", e => { if (!e.target.closest("a")) location.href = a.href; });
+    return tr; }));
+  $("page").textContent = `${list.length} clubs · page ${state.page + 1} of ${pages}`;
+  $("prev").disabled = state.page === 0; $("next").disabled = state.page >= pages - 1;
+  document.querySelectorAll("th[data-k]").forEach(th => { th.removeAttribute("aria-sort"); if (th.dataset.k === state.sort) th.setAttribute("aria-sort", state.asc ? "ascending" : "descending"); });
+}
+document.querySelectorAll("th[data-k]").forEach(th => th.addEventListener("click", () => { const k = th.dataset.k;
+  state.asc = state.sort === k ? !state.asc : k === "1"; state.sort = k; state.page = 0; render(); }));
+$("q").addEventListener("input", () => { state.page = 0; render(); });
+$("prev").addEventListener("click", () => { state.page--; render(); scrollTo(0, 0); });
+$("next").addEventListener("click", () => { state.page++; render(); scrollTo(0, 0); });
+render();
+</script>
+</body>
+</html>

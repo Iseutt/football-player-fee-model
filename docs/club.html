@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Club · Player Fee Model</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="site.css?v=202610041816">
+</head>
+<body>
+<main>
+  <a class="back" href="clubs.html">← All clubs</a>
+  <div id="app"><p class="missing">Loading…</p></div>
+</main>
+<script src="clubs.js?v=202610041816"></script>
+<script>
+const C = window.CLUBS, ID = +new URLSearchParams(location.search).get("id");
+const $ = id => document.getElementById(id);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const eur = k => k == null ? "–" : k === 0 ? "€0" : k >= 1e6 ? "€" + (k / 1e6).toFixed(2) + "bn" : k >= 1000 ? "€" + (k / 1000).toFixed(k >= 10000 ? 0 : 1) + "m" : "€" + Math.round(k) + "k";
+const pct = x => (x >= 0 ? "+" : "−") + Math.abs(x * 100).toFixed(0) + "%";
+const day = d => new Date(d + "T00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+const KINDS = ["Transfer", "Free transfer", "Loan", "End of loan", "Contract ended", "Retired", "Fee not disclosed", "Youth or reserve team", "Career break"];
+const FLAG = { England: "gb-eng", Scotland: "gb-sct", Spain: "es", Germany: "de", Italy: "it", France: "fr", Portugal: "pt", Netherlands: "nl",
+  Belgium: "be", "Türkiye": "tr", Austria: "at", Switzerland: "ch", Denmark: "dk", Greece: "gr", Croatia: "hr", Norway: "no", Poland: "pl",
+  Romania: "ro", Russia: "ru", Sweden: "se", Serbia: "rs", "Czech Republic": "cz", Ukraine: "ua", Argentina: "ar", Australia: "au", Brazil: "br",
+  Japan: "jp", Mexico: "mx", "United States": "us", "Korea, South": "kr", "Saudi Arabia": "sa" };
+function img(cls, src) { const i = el("img", cls); i.alt = ""; i.loading = "lazy"; i.referrerPolicy = "no-referrer"; i.src = src; i.onerror = () => i.remove(); return i; }
+const crest = id => id ? img("crest", "https://tmssl.akamaized.net/images/wappen/small/" + id + ".png") : "";
+function box(title) { const b = el("section", "box"); b.append(el("h2", null, title)); return b; }
+function table(head, lefts) { const t = el("table"), h = el("tr"); head.forEach((k, i) => h.append(el("th", lefts.includes(i) ? "l" : null, k))); t.append(h); return t; }
+const ord = n => n + (n % 10 === 1 && n % 100 !== 11 ? "st" : n % 10 === 2 && n % 100 !== 12 ? "nd" : n % 10 === 3 && n % 100 !== 13 ? "rd" : "th");
+
+// the selling or buying record of the club, as one sentence and a few figures
+function recordBox(title, r, selling) {
+  const b = box(title), d = el("div", "in"), verb = selling ? "sells" : "buys", noun = selling ? "sales" : "purchases";
+  const kv = (k, v) => { const row = el("div", "kv"); row.append(el("span", null, k), el("b", null, v)); d.append(row); };
+  if (r.n < C.min_deals) {
+    d.append(el("p", "verdict", "Too few " + noun + " to say"), el("p", null, r.n + " paid " + noun + " with a known Transfermarkt value since 2014. At least " + C.min_deals + " are needed."));
+  } else {
+    const sig = r.p_market < 0.05, up = r.vs_market > 0;
+    d.append(el("p", "verdict", sig ? "Usually " + verb + (up ? " above" : " below") + " what other clubs " + (selling ? "get" : "pay") : "No clear habit"),
+      el("p", null, sig ? "For the same Transfermarkt value, in the same years, its fees are typically " + (r.vs_market > 2 ? "about " + (1 + r.vs_market).toFixed(1) + " times those" : pct(r.vs_market).replace(/^[+−]/, "") + (up ? " higher" : " lower") + " than those") + " of other clubs. The difference is too large to be chance."
+        : "Its fees are " + pct(r.vs_market) + " compared with other clubs, a difference that could be chance."));
+    kv("Paid " + noun + " since 2014", r.n);
+    kv("Typical fee compared with the Transfermarkt value", "×" + r.ratio.toFixed(2));
+    const rel = v => v > 2 ? "×" + (1 + v).toFixed(1) : pct(v);
+    kv("Compared with other clubs, same years", rel(r.vs_market) + (sig ? "" : " (not significant)"));
+    kv("Compared with the model price", rel(r.vs_model) + (r.p_model < 0.05 ? "" : " (not significant)"));
+  }
+  b.append(d); return b;
+}
+function moveTable(title, list, label) {
+  const b = box(title), t = table(["Date", "Player", label, "Fee", "Transfermarkt", "Model"], [1, 2]);
+  list.forEach(([date, pid, name, cid, cname, fee, kind, tm, model, listed]) => {
+    const r = el("tr"), p = el("td", "l"), c = el("td", "l"), cs = el("span");
+    if (listed) { const a = el("a", null, name); a.href = "player.html?id=" + pid; p.append(a); } else p.append(name);
+    cs.append(crest(cid), cname || "Unknown"); c.append(cs);
+    const paid = kind === 0 && fee;
+    r.append(el("td", "soft", day(date)), p, c, el("td", paid ? "strong" : "soft", paid ? eur(fee) : kind === 2 ? "Loan" : KINDS[kind]),
+      el("td", "soft", eur(tm)), el("td", "soft", model == null ? "–" : eur(model)));
+    t.append(r); });
+  if (!list.length) { const r = el("tr"), td = el("td", "l", "No move on record."); td.colSpan = 6; r.append(td); t.append(r); }
+  const s = el("div", "scroll"); s.append(t); b.append(s); return b;
+}
+
+function render(c, x) {
+  const app = $("app"); app.replaceChildren(); document.title = c[1] + " · Player Fee Model";
+  const country = c[3] === "Korea, South" ? "South Korea" : c[3], sq = x.squad, tm = c[5], model = c[6];
+  // header
+  const hero = el("section", "hero"), logo = el("div", "logo"), who = el("div", "who"), value = el("div", "value"), line = el("div", "clubline");
+  logo.append(img("", "https://tmssl.akamaized.net/images/wappen/head/" + c[0] + ".png"));
+  if (FLAG[c[3]]) line.append(img("flag", "https://flagcdn.com/w40/" + FLAG[c[3]] + ".png"));
+  line.append(c[2].replace(/ \(.*\)$/, "") + " · " + country);
+  const facts = el("dl", "facts"), fact = (k, v) => { if (v == null) return; const d = el("div"); d.append(el("dt", null, k + ":"), el("dd", null, v)); facts.append(d); };
+  fact("Players listed", sq.length);
+  fact("Average age", sq.length ? (sq.reduce((s, r) => s + r[3], 0) / sq.length).toFixed(1) : null);
+  if (x.season) { fact("League " + x.season.label, x.season.position ? ord(x.season.position) + " place" : null);
+    fact("Record", x.season.w + " W · " + x.season.d + " D · " + x.season.l + " L"); fact("Goals", x.season.gf + " : " + x.season.ga); fact("Points per game", x.season.ppg.toFixed(2)); }
+  who.append(el("h1", null, c[1]), line, facts);
+  const t = el("div", "tm"), tl = el("span"); tl.append(el("small", null, "Transfermarkt "), el("b", null, eur(tm)));
+  t.append(tl); if (tm) t.append(el("span", "chip " + (model >= tm ? "up" : "down"), (model >= tm ? "▲ " : "▼ ") + pct(model / tm - 1)));
+  value.append(el("small", null, "Squad value, model · 1 July 2026"), el("div", "big", eur(model)), t);
+  hero.append(logo, who, value); app.append(hero);
+
+  const cols = el("div", "cols"), left = el("div"), right = el("div"); cols.append(left, right); app.append(cols);
+  // squad
+  const squad = box("Squad"), st = table(["Player", "Position", "Age", "Transfermarkt", "Model"], [0, 1]);
+  sq.forEach(([pid, name, pos, age, ptm, pm]) => { const r = el("tr"), p = el("td", "l"), a = el("a", null, name); a.href = "player.html?id=" + pid; p.append(a);
+    r.append(p, el("td", "l soft", pos), el("td", "soft", age), el("td", "soft", eur(ptm)), el("td", "strong", eur(pm))); st.append(r); });
+  if (!sq.length) { const r = el("tr"), td = el("td", "l", "No player of this club is listed."); td.colSpan = 5; r.append(td); st.append(r); }
+  const ss = el("div", "scroll"); ss.append(st); squad.append(ss); left.append(squad);
+  left.append(moveTable("Last departures", x.out, "To"), moveTable("Last arrivals", x.in, "From"));
+
+  // records and results
+  right.append(recordBox("When it sells", x.sell, true), recordBox("When it buys", x.buy, false));
+  const res = box("Last results");
+  x.results.forEach(([date, comp, home, oid, oname, gf, ga]) => { const r = el("div", "res"), o = el("div", "opp"), k = gf > ga ? "w" : gf < ga ? "l" : "d";
+    o.append(crest(oid), el("span", null, (home ? "" : "at ") + oname), el("small", null, day(date)));
+    r.append(el("i", k, k.toUpperCase()), o, el("b", null, gf + " : " + ga)); r.title = comp; res.append(r); });
+  if (!x.results.length) res.append(Object.assign(el("div", "in"), { textContent: "No result on record." }));
+  right.append(res);
+  app.append(el("p", "foot", "Squad value: sum of the model prices (no buyer) of the players listed, at their club of today. In the transfer tables, Transfermarkt is the player's value before the move "
+    + "and Model is the fee the full model expected for that deal, computed without having seen it. The model already knows how the club sold in the previous three years, so the comparison with the model price shows what is left once that habit is taken into account. "
+    + "Results up to 6 July 2026."));
+}
+
+(function start() {
+  const c = C.clubs.find(r => r[0] === ID);
+  if (!c) { $("app").replaceChildren(el("p", "missing", "Club not found. Go back to the list and pick a club.")); return; }
+  const s = document.createElement("script"); s.src = "clubs/" + ID + ".js?v=" + C.version;
+  s.onload = s.onerror = () => { const x = window.CLUB && window.CLUB[ID];
+    if (!x) { $("app").replaceChildren(el("p", "missing", "This club could not be loaded.")); return; } render(c, x); };
+  document.head.append(s);
+})();
+</script>
+</body>
+</html>
